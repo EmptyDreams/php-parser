@@ -4,7 +4,7 @@ import top.kmar.php.container.KeywordsTrie
 import top.kmar.php.exceptions.PhpLexerException
 import java.util.*
 
-class TokenStream(
+class PhpLexer(
     private val stream: SingleThreadRandomStream
 ) {
 
