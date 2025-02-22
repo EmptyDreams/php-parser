@@ -8,6 +8,8 @@ class TokenStream(
     private val stream: SingleThreadRandomStream
 ) {
 
+    private var lineNumber = 1
+
     init {
         val stream = this.stream
         if (
@@ -17,8 +19,7 @@ class TokenStream(
         ) {
             throw PhpLexerException(stream.subStream(0, 8), "PHP 文件应当以 `<?php` 开头")
         }
-        @Suppress("ControlFlowWithEmptyBody")
-        while (stream.nextIfWhitespace()) { }
+        skipWhitespace()
     }
 
     private val stateStack = ArrayList<State>(8).apply {
@@ -34,8 +35,7 @@ class TokenStream(
         var startIndex: Int
         when (val lastState = stateStack.last()) {
             State.CODE, State.STRING_INLINE_CODE -> {
-                @Suppress("ControlFlowWithEmptyBody")
-                while (stream.nextIfWhitespace() || stream.nextIfNewLine()) {}
+                skipWhitespace()
                 if (!stream.hasNext()) return null
                 startIndex = stream.pos()
                 val firstChar = stream.nextChar()
@@ -59,12 +59,18 @@ class TokenStream(
                                 '/'.code -> {
                                     stream.skip(1)
                                     stream.forEachStream { it != '\n' }
+                                    ++lineNumber
                                     return PhpToken(stream.subStream(startIndex, stream.pos()), TokenType.COMMENT)
                                 }
                                 '*'.code -> {
                                     stream.skip(1)
                                     stream.forEachStream {
-                                        it != '*' || stream.getOffsetChar(0) != '/'.code
+                                        if (it == '\n') {
+                                            ++lineNumber
+                                            true
+                                        } else {
+                                            it != '*' || stream.getOffsetChar(0) != '/'.code
+                                        }
                                     }
                                     stream.skip(1)
                                     return PhpToken(stream.subStream(startIndex, stream.pos()), TokenType.COMMENT)
@@ -73,6 +79,7 @@ class TokenStream(
                         }
                         '#'.code -> {
                             stream.forEachStream { it != '\n' }
+                            ++lineNumber
                             return PhpToken(stream.subStream(startIndex, stream.pos()), TokenType.COMMENT)
                         }
                         '\''.code -> {
@@ -141,9 +148,11 @@ class TokenStream(
                                         stateStack.add(State.HEAR_DOC)
                                     }
                                 }
+                                ++lineNumber
                                 return PhpToken(stream.subStream(startIndex, endIndex), TokenType.STRING_DELIMITER)
                             }
                         } else if (firstChar == '-'.code || firstChar == '+'.code) {
+                            skipWhitespace()
                             val secondChar = stream.getOffsetChar(0)
                             if (secondChar >= '0'.code && secondChar <= '9'.code) {
                                 val numberParser = matchNumber(0, firstChar == '-'.code)
@@ -172,11 +181,13 @@ class TokenStream(
                             isOperator == it.code.isOperator()
                         }
                     }
-                    if (keywordsNode != null && stream.getOffsetChar(0).toChar().isWhitespace()) {
+                    val nextChar = stream.getOffsetChar(0).toChar()
+                    if (keywordsNode != null && nextChar.isWhitespace()) {
                         var nextKeywords = keywordsNode.nextSpace()
                         if (nextKeywords != null) {
+                            if (nextChar == '\n') ++lineNumber
                             stream.skip(1)
-                            stream.forEachStreamBefore { it.isWhitespace() }
+                            skipWhitespace()
                             var offset = 0
                             do {
                                 val charCode = stream.getOffsetChar(offset)
@@ -220,6 +231,10 @@ class TokenStream(
                                 '\''.code, '\\'.code -> stream.skip(1)
                                 else -> {}
                             }
+                            true
+                        }
+                        '\n' -> {
+                            ++lineNumber
                             true
                         }
                         else -> true
@@ -279,6 +294,10 @@ class TokenStream(
                             }
                             true
                         }
+                        '\n' -> {
+                            ++lineNumber
+                            true
+                        }
                         else -> true
                     }
                 }
@@ -287,7 +306,6 @@ class TokenStream(
             State.HEAR_DOC -> {
                 startIndex = stream.pos()
                 val endFlag = stateAdditionStack.last()
-                val isLineStart = stream.getOffsetChar(-1) == '\n'.code
                 val firstChar = stream.nextChar()
                 if (firstChar == '$'.code) {
                     if (stream.getOffsetChar(0) == '{'.code) {
@@ -300,33 +318,21 @@ class TokenStream(
                     }
                     matchVarName()
                     return PhpToken(stream.subStream(startIndex, stream.pos()), TokenType.VAR_NAME)
-                } else if (isLineStart) {
-                    var endChar = endFlag.getOffsetChar(0)
-                    if (endChar == firstChar) {
-                        var offset = 0
-                        endChar = endFlag.getOffsetChar(1)
-                        while (endChar != -1) {
-                            val char = stream.getOffsetChar(offset++)
-                            if (char != endChar) {
-                                offset = -1
-                                break
-                            }
-                            endChar = stream.getOffsetChar(offset + 1)
-                        }
-                        if (offset != -1 && stream.getOffsetChar(offset++) == ';'.code) {
-                            stateStack.removeLast()
-                            stateAdditionStack.removeLast()
-                            stream.skip(offset)
-                            return PhpToken(
-                                stream.subStream(startIndex, startIndex + offset),
-                                TokenType.STRING_DELIMITER
-                            )
-                        }
-                    }
+                } else if (
+                    stream.getOffsetChar(-2) == '\n'.code &&
+                    tryMatchDocEnd(endFlag, -1)
+                ) {
+                    stateStack.removeLast()
+                    stateAdditionStack.removeLast()
+                    return PhpToken(
+                        stream.subStream(startIndex, stream.pos()),
+                        TokenType.STRING_DELIMITER
+                    )
                 }
                 stream.forEachStreamBefore {
                     when (it) {
                         '\n' -> {
+                            ++lineNumber
                             val pos = stream.pos()
                             if (tryMatchDocEnd(endFlag, 1)) {
                                 stateStack.removeLast()
@@ -373,8 +379,20 @@ class TokenStream(
             State.NEW_DOC -> {
                 startIndex = stream.pos()
                 val endFlag = stateAdditionStack.last()
+                if (
+                    stream.getOffsetChar(-1) == '\n'.code &&
+                    tryMatchDocEnd(endFlag, 0)
+                ) {
+                    stateStack.removeLast()
+                    stateAdditionStack.removeLast()
+                    return PhpToken(
+                        stream.subStream(startIndex, stream.pos()),
+                        TokenType.STRING_DELIMITER
+                    )
+                }
                 stream.forEachStream {
                     if (it == '\n') {
+                        ++lineNumber
                         val pos = stream.pos()
                         if (tryMatchDocEnd(endFlag, 0)) {
                             stateStack.removeLast()
@@ -388,6 +406,22 @@ class TokenStream(
                     true
                 }
                 throw PhpLexerException(stream, "The end of the new_doc was not found")
+            }
+        }
+    }
+
+    /**
+     * 跳过所有空白符并在换行时更新行号
+     */
+    private fun skipWhitespace() {
+        stream.forEachStreamBefore {
+            when {
+                it == '\n' -> {
+                    ++lineNumber
+                    true
+                }
+                it.isWhitespace() -> true
+                else -> false
             }
         }
     }
