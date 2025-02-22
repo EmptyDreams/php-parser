@@ -85,4 +85,10 @@ class SubSingleThreadStream(
 
     override fun close() { }
 
+    override fun convertToString(startIndex: Int, endIndex: Int, capacity: Int): String {
+        val left = startIndex + this.startIndex
+        val right = (endIndex + this.startIndex).coerceAtMost(this.endIndex)
+        return parentStream.convertToString(left, right, capacity)
+    }
+
 }

@@ -78,6 +78,26 @@ interface SingleThreadRandomStream : Closeable {
         return SubSingleThreadStream(this, start, end)
     }
 
+    /**
+     * 将流中指定范围的内容转换为字符串。
+     *
+     * 在 [startIndex] 和 [endIndex] 超出流范围时不会报错。
+     *
+     * @param startIndex 起始位置（包含）
+     * @param endIndex 结束位置（不包含，填 -1 表示无长度限制）
+     * @param capacity 预分配的字符串长度
+     */
+    fun convertToString(startIndex: Int = 0, endIndex: Int = -1, capacity: Int = 16): String {
+        return buildString(capacity) {
+            var index = startIndex
+            while (index != endIndex) {
+                val char = getChar(index++)
+                if (char == -1) break
+                append(char.toChar())
+            }
+        }
+    }
+
 }
 
 /**

@@ -75,4 +75,11 @@ class StringSingleThreadStream(private val str: String) : SingleThreadRandomStre
 
     override fun close() { }
 
+    override fun convertToString(startIndex: Int, endIndex: Int, capacity: Int): String {
+        val left = startIndex.coerceAtLeast(0)
+        val right = if (endIndex == -1) str.length else endIndex.coerceAtMost(str.length)
+        if (left == 0 && right == str.length) return str
+        return str.substring(left, right)
+    }
+
 }

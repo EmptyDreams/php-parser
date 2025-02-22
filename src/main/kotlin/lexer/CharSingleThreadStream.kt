@@ -74,4 +74,10 @@ class CharSingleThreadStream(
 
     override fun close() { }
 
+    override fun convertToString(startIndex: Int, endIndex: Int, capacity: Int): String {
+        val left = startIndex.coerceAtLeast(0)
+        val right = if (endIndex == -1) 1 else endIndex.coerceAtMost(1)
+        return if (left == right) "" else char.toString()
+    }
+
 }
