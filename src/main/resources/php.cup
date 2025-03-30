@@ -1,0 +1,153 @@
+package top.kmar.php;
+
+import java_cup.runtime.*;
+
+// 字符串
+terminal String T_SINGLE_QUOTE, T_DOUBLE_QUOTE, T_BACK_QUOTE, T_CODE_BLOCK;
+// ${
+terminal T_OPEN_DOLLAR_CURLY;
+// { }
+terminal T_OPEN_CURLY, T_CLOSE_CURLY;
+// [ ]
+terminal T_OPEN_SQUARE, T_CLOSE_SQUARE;
+// ( )
+terminal T_OPEN_PAREN, T_CLOSE_PAREN;
+// 注释
+terminal String T_LINE_COMMENT, T_BLOCK_COMMENT_CONTENT;
+terminal T_OPEN_BLOCK_COMMENT, T_CLOSE_BLOCK_COMMENT;
+// 运算符
+terminal    T_SEMICOLON,        // ;
+            T_COMMA,            // ,
+            T_DOT,              // .
+            T_DOUBLE_ARROW,     // =>
+            T_SINGLE_ARROW,     // ->
+            T_ELLIPSIS,         // ...
+            T_SCOPE_RESOLUTION, // ::
+            T_PLUS,             // +
+            T_MINUS,            // -
+            T_MUL,              // *
+            T_DIV,              // /
+            T_MOD,              // %
+            T_INC,              // ++
+            T_DEC,              // --
+            T_ASSIGN,           // =
+            T_PLUS_ASSIGN,      // +=
+            T_DOT_ASSIGN,       // .=
+            T_MINUS_ASSIGN,     // -=
+            T_MUL_ASSIGN,       // *=
+            T_DIV_ASSIGN,       // /=
+            T_MOD_ASSIGN,       // %=
+            T_BIT_AND,          // &
+            T_BIT_OR,           // |
+            T_BIT_XOR,          // ^
+            T_BIT_NOT,          // ~
+            T_LEFT_SHIFT,       // <<
+            T_RIGHT_SHIFT,      // >>
+            T_BIT_AND_ASSIGN,   // &=
+            T_BIT_OR_ASSIGN,    // |=
+            T_BIT_XOR_ASSIGN,   // ^=
+            T_LEFT_SHIFT_ASSIGN,// <<=
+            T_RIGHT_SHIFT_ASSIGN,// >>=
+            T_BOOL_NOT,         // !
+            T_BOOL_AND,         // &&
+            T_BOOL_OR,          // ||
+            T_DOUBLE_EQ,        // ==
+            T_NOT_DOUBLE_EQ,    // !=
+            T_TRIPLE_EQ,        // ===
+            T_NOT_TRIPLE_EQ,    // !==
+            T_LT,               // <
+            T_GT,               // >
+            T_LT_EQ,            // <=
+            T_GT_EQ,            // >=
+            T_QUESTION,         // ?
+            T_COLON,            // :
+            T_POW,              // **
+            T_COALESCE,         // ??
+            T_ELVIS,            // ?:
+            T_AT;               // @
+// 关键字
+terminal    T_NULL,             // null
+            T_TRUE,             // true
+            T_FALSE,            // false
+            T_ECHO,             // echo
+            T_PRINT,            // print
+            T_RETURN,           // return
+            T_THROW,            // throw
+            T_IF,               // if
+            T_ELSE,             // else
+            T_ELSEIF,           // elseif
+            T_FOR,              // for
+            T_FOREACH,          // foreach
+            T_WHILE,            // while
+            T_DO,               // do
+            T_END_IF,           // endif
+            T_END_FOR,          // endfor
+            T_END_FOREACH,      // endforeach
+            T_END_WHILE,        // endwhile
+            T_BREAK,            // break
+            T_CONTINUE,         // continue
+            T_GOTO,             // goto
+            T_SWITCH,           // switch
+            T_CASE,             // case
+            T_DEFAULT,          // default
+            T_END_SWITCH,       // endswitch
+            T_TRY,              // try
+            T_CATCH,            // catch
+            T_FINALLY,          // finally
+            T_FUNCTION,         // function
+            T_CLASS,            // class
+            T_ENUM,             // enum
+            T_TRAIT,            // trait
+            T_INTERFACE,        // interface
+            T_EXTENDS,          // extends
+            T_IMPLEMENTS,       // implements
+            T_STATIC,           // static
+            T_ABSTRACT,         // abstract
+            T_FINAL,            // final
+            T_PRIVATE,          // private
+            T_PROTECTED,        // protected
+            T_PUBLIC,           // public
+            T_CONST,            // const
+            T_NEW,              // new
+            T_INSTANCEOF,       // instanceof
+            T_MIXED,            // mixed
+            T_CALLABLE,         // callable
+            T_INT,              // int
+            T_FLOAT,            // float
+            T_BOOL,             // bool
+            T_STRING,           // string
+            T_ARRAY,            // array
+            T_OBJECT,           // object
+            T_ITERABLE,         // iterable
+            T_RESOURCE,         // resource
+            T_VOID,             // void
+            T_YIELD,            // yield
+            T_YIELD_FROM,       // yield from
+            T_VAR,              // var
+            T_GLOBAL,           // global
+            T_LIST,             // list
+            T_CLONE,            // clone
+            T_USE,              // use
+            T_NAMESPACE,        // namespace
+            T_AS,               // as
+            T_REQUIRE,          // require
+            T_REQUIRE_ONCE,     // require_once
+            T_INCLUDE,          // include
+            T_INCLUDE_ONCE,     // include_once
+            T_EVAL,             // eval
+            T_EXIT,             // exit
+            T_DIE,              // die
+            T_DECLARE,          // declare
+            T_SELF,             // self
+            T_PARENT;           // parent
+
+// 值
+terminal String T_STR_VALUE, T_VAR_NAME, T_IDENTIFIER, T_INT_VALUE, T_FLOAT_VALUE, T_FLOAT_E_VALUE;
+terminal T_WHITESPACE;
+
+nonterminal S;
+
+start with S;
+
+
+S ::= T_DOUBLE_QUOTE {: System.out.println("Parsed a double quote"); :};
