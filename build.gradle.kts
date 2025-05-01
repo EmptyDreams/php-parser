@@ -24,8 +24,8 @@ sourceSets {
 }
 
 dependencies {
-    compileOnly("com.github.vbmacher:java-cup:11b-20160615-3")
     implementation("de.jflex:jflex:1.9.1")
+    implementation(files("libs/runtime/java-cup-11b-runtime.jar"))
 
     testImplementation(kotlin("test"))
 }
@@ -41,7 +41,7 @@ tasks.register<JFlexTask>("generateJFlex") {
 
 tasks.register<JavaExec>("generateCup") {
     mainClass.set("java_cup.Main")
-    classpath = configurations.compileClasspath.get()
+    classpath = files("libs/compile/java-cup-11b.jar")
     val outputFile = layout.buildDirectory.dir("generated/main/cup/top/kmar/php").get().asFile
     outputFile.mkdirs()
     args = listOf(
@@ -49,6 +49,8 @@ tasks.register<JavaExec>("generateCup") {
         "-package", "top.kmar.php.parser",
         "-parser", "PhpParser",
         "-symbols", "PhpSymbols",
+        "-ast", "Node%s",
+        "-ast_flatten", "_LIST",
         "src/main/resources/php.cup"
     )
 }

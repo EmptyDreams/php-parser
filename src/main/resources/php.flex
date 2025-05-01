@@ -179,7 +179,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "[" { return symbol(PhpSymbols.T_OPEN_SQUARE); }
     "]" { return symbol(PhpSymbols.T_CLOSE_SQUARE); }
 
-    ";" { return symbol(PhpSymbols.T_SEMICOLON); }
+    ";" { return symbol(PhpSymbols.T_SEMI); }
     "," { return symbol(PhpSymbols.T_COMMA); }
     "." { return symbol(PhpSymbols.T_DOT); }
     "=>" { return symbol(PhpSymbols.T_DOUBLE_ARROW); }
@@ -305,7 +305,10 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "parent" { return symbol(PhpSymbols.T_PARENT); }
 
     \$({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext()); }
-    ({LABEL}) { return symbol(PhpSymbols.T_IDENTIFIER, yytext()); }
+    ({LABEL}) { return symbol(PhpSymbols.T_SIMPLE_NAME, yytext()); }
+    (\\{LABEL}\\?)|(\\{LABEL})+\\?|(({LABEL}\\)+{LABEL}\\?)|({LABEL}\\) {
+        return symbol(PhpSymbols.T_QUALIFIED_NAME, yytext());
+    }
     [+-]?(([0-9]+(_[0-9]+)*)|(0b[01]+(_[01]+)*)|(0x[0-9a-fA-F]+(_[0-9a-fA-F])*)) {
         return symbol(PhpSymbols.T_INT_VALUE, yytext());
     }

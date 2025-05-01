@@ -1,7 +1,14 @@
 package top.kmar.php
 
+import java_cup.runtime.DefaultSymbolFactory
+import java.io.File
+
 fun main() {
-    PhpLexer.main(arrayOf("D:\\Workspace\\jvm\\php-parser\\src\\test\\resources\\test.php"))
+    val file = File("D:\\Workspace\\jvm\\php-parser\\src\\test\\resources\\test.php")
+    val tokenStream = PhpLexer(file.bufferedReader())
+    val parser = PhpParser(tokenStream, DefaultSymbolFactory())
+    val symbol = parser.parse()
+    println(symbol)
 //    val file = File("D:\\Workspace\\jvm\\php-parser\\src\\test\\resources\\test.php")
 //    file.bufferedReader().use { reader ->
 //        val lexer = PhpLexer(reader)
