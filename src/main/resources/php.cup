@@ -149,38 +149,75 @@ terminal T_WHITESPACE;
 nonterminal EMPTY;
 // T_SIMPLE_NAME 或 T_QUALIFIED_NAME
 nonterminal IAstNode NT_IDENTIFIER;
+// 权限修饰符
+nonterminal IAstNode NT_ACCESS_MODIFIER;
+// 修饰符
+nonterminal IAstNode NT_METHOD_MODIFIER;
+nonterminal List NT_METHOD_MODIFIER_LIST;
 
 // 根节点
 nonterminal IAstNode NT_S, NT_PHP_BLOCK;
 // top
 nonterminal IAstNode NT_TOP_STATEMENT;
 nonterminal List NT_TOP_STATEMENT_LIST;
+// 类型
+nonterminal IAstNode NT_TYPE;
 // use
 nonterminal IAstNode NT_USE_DECLARATION, NT_USE_TARGET;
 nonterminal List NT_USE_TARGET_LIST;
 // namespace
 nonterminal IAstNode NT_NAMESPACE_DELEARATION;
+// function
+nonterminal IAstNode NT_FUNC_DECLARATION, NT_METHOD_DECLARATION, NT_ORIGINAL_FUNC_DECLARATION, NT_FUNC_PARAMER;
+nonterminal List NT_FUNC_PARAMER_LIST;
+
+// 表达式
+nonterminal IAstNode    NT_STATEMENT,
+                        NT_IF_STAT,
+                        NT_WHILE_STAT, NT_DO_WHILD_STAT,
+                        NT_FOR_STAT, NT_FOR_EACH_STAT,
+                        NT_SWITCH_STAT,
+                        NT_BREAK_STAT, NT_CONTINUE_STAT, NT_RETURN_STAT,
+                        NT_YIELD_STAT, NT_YIELD_FROOM_STAT,
+                        NT_GLOBAL_STAT,
+                        NT_STATIC_VAR_STAT,
+                        NT_ECHO_STAT,
+                        NT_EXPRESSION_STAT,
+                        NT_TRY_CATCH_STAT, NT_THROW_STAT,
+                        NT_GOTO_STAT,
+                        NT_DECLARE_STAT,
+                        NT_EMPTY_STAT
+                        ;
+nonterminal IAstNode NT_STATEMENT_LIST;
 
 start with NT_S;
 
+// 标识符
 NT_IDENTIFIER ::= T_SIMPLE_NAME:simpleName | T_QUALIFIED_NAME:qualifiedName;
+// 修饰符
+NT_ACCESS_MODIFIER ::= T_PUBLIC:isPublic | T_PROTECTED:isProtected | T_PRIVATE:isPrivate;
+NT_METHOD_MODIFIER ::= T_STATIC:isStatic | T_FINAL:isFinal | T_ABSTRACT:isAbstract;
+NT_METHOD_MODIFIER_LIST ::= NT_METHOD_MODIFIER:item
+    | NT_METHOD_MODIFIER_LIST NT_METHOD_MODIFIER:item;
 
 NT_S ::= T_CODE_BLOCK NT_TOP_STATEMENT_LIST:topList
     | T_CODE_BLOCK;
 
+// 顶层表达式
 NT_TOP_STATEMENT ::= NT_USE_DECLARATION:use
-    | NT_NAMESPACE_DELEARATION:namespace;
+    | NT_NAMESPACE_DELEARATION:namespace
+    | NT_FUNC_DECLARATION:func;
 NT_TOP_STATEMENT_LIST ::= NT_TOP_STATEMENT:item
     | NT_TOP_STATEMENT_LIST NT_TOP_STATEMENT:item;
 
 // 完整的 use 表达式
 NT_USE_DECLARATION ::= T_USE NT_USE_TARGET:target T_SEMI;
 // use 后方的表达式
-NT_USE_TARGET ::= NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias // \xxx\xxx as xxx
-    | T_FUNCTION:isFunc NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias  // function \xxx\xxx as xxx
+NT_USE_TARGET ::= NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias         // \xxx\xxx as xxx
+    | T_FUNCTION:isFunc NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias   // function \xxx\xxx as xxx
     | T_CONST:isConst NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias     // const \xxx\xxx as xxx
-    | NT_IDENTIFIER:identifier              // \xxx\xxx
-    | T_FUNCTION:isFunc NT_IDENTIFIER:identifier   // function \xxx\xxx
+    | NT_IDENTIFIER:identifier                      // \xxx\xxx
+    | T_FUNCTION:isFunc NT_IDENTIFIER:identifier    // function \xxx\xxx
     | T_CONST:isConst NT_IDENTIFIER:identifier      // const \xxx\xxx
     // \xxx\xxx{item, item...}
     | T_QUALIFIED_NAME:prefix T_OPEN_CURLY NT_USE_TARGET_LIST:subList T_CLOSE_CURLY
@@ -193,8 +230,35 @@ NT_USE_TARGET_LIST ::= NT_USE_TARGET:item
     | NT_USE_TARGET_LIST T_COMMA NT_USE_TARGET:item
     | NT_USE_TARGET_LIST T_COMMA;
 
+// namespace
 NT_NAMESPACE_DELEARATION ::= T_NAMESPACE NT_IDENTIFIER:identifier T_SEMI    // namespace xxx;
     // namespace xxx {}
     | T_NAMESPACE NT_IDENTIFIER:identifier T_OPEN_CURLY NT_TOP_STATEMENT_LIST:statementList T_CLOSE_CURLY;
+
+// 函数定义
+NT_ORIGINAL_FUNC_DECLARATION ::=
+    // function xxx(xxx) { xxx }
+    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
+    // function xxx() { xxx }
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
+    // function xxx(xxx): xxx { xxx }
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
+    // function xxx(): xxx { xxx }
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY;
+// 顶层函数
+NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func
+    | T_FINAL:isFinal NT_ORIGINAL_FUNC_DECLARATION:func;
+// 类方法
+NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func
+    | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func
+    | NT_ACCESS_MODIFIER:accessModifier NT_ORIGINAL_FUNC_DECLARATION:func
+    | NT_METHOD_MODIFIER_LIST:modifierList NT_ACCESS_MODIFIER:accessModifier NT_ORIGINAL_FUNC_DECLARATION:func
+    | NT_ACCESS_MODIFIER:accessModifier NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func;
 
 EMPTY ::= /* EMTPY */;
