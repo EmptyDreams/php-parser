@@ -174,6 +174,8 @@ nonterminal List NT_FUNC_PARAMER_LIST;
 nonterminal IAstNode NT_CLASS_DECLARATION, NT_ORIGINAL_CLASS_DECLARATION, NT_CLASS_STAT;
 nonterminal List NT_CLASS_STAT_LIST, NT_IMPLEMENT_LIST;
 nonterminal IAstNode NT_TRAIT_DECLARATION;
+nonterminal IAstNode NT_INTERFACE_DECLARATION, NT_INTERFACE_STAT;
+nonterminal List NT_INTERFACE_STAT_LIST;
 
 // 表达式
 nonterminal IAstNode    NT_STATEMENT,
@@ -291,5 +293,12 @@ NT_CLASS_STAT_LIST ::= NT_CLASS_STAT:statement
     | EMPTY;
 // trait class
 NT_TRAIT_DECLARATION ::= T_TRAIT T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY;
+// interface
+NT_INTERFACE_DECLARATION ::=
+    // interface xxx { xxx }
+    T_INTERFACE T_SIMPLE_NAME:name T_OPEN_CURLY NT_INTERFACE_STAT_LIST:statementList T_CLOSE_CURLY
+    // interface xxx extends xxx { xxx }
+    | T_INTERFACE T_SIMPLE_NAME:name T_EXTENDS NT_IMPLEMENT_LIST:ifaceList
+        T_OPEN_CURLY NT_INTERFACE_STAT_LIST:statementList T_CLOSE_CURLY;
 
 EMPTY ::= /* EMTPY */;
