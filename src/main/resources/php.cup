@@ -235,10 +235,9 @@ NT_USE_TARGET ::= NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias         // \
     | T_CONST:isConst T_QUALIFIED_NAME:qualifiedPrefix T_OPEN_CURLY NT_USE_TARGET_LIST:subList T_CLOSE_CURLY
     // function \xxx\xxx{item, item, <...>,?}
     | T_FUNCTION:isFunc T_QUALIFIED_NAME:qualifiedPrefix T_OPEN_CURLY NT_USE_TARGET_LIST:subList T_CLOSE_CURLY;
-// item, item, <...>,?
+// item, item, <...>
 NT_USE_TARGET_LIST ::= NT_USE_TARGET:item
-    | NT_USE_TARGET_LIST T_COMMA NT_USE_TARGET:item
-    | NT_USE_TARGET_LIST T_COMMA;
+    | NT_USE_TARGET_LIST T_COMMA NT_USE_TARGET:item;
 
 // namespace
 NT_NAMESPACE_DELEARATION ::= T_NAMESPACE NT_IDENTIFIER:identifier T_SEMI    // namespace xxx;
@@ -318,5 +317,12 @@ NT_INTERFACE_STAT ::=
     // public function xxx(xxx): xxx;
     | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramaList T_CLOSE_PAREN
         T_COLON NT_TYPE:returnType T_SEMI;
+
+// 方法参数列表
+NT_FUNC_PARAMER ::= T_VAR_NAME:name
+    | NT_TYPE:type T_VAR_NAME:name;
+NT_FUNC_PARAMER_LIST ::= NT_FUNC_PARAMER:item
+    | NT_FUNC_PARAMER_LIST T_COMMA NT_FUNC_PARAMER:item
+    | EMPTY;
 
 EMPTY ::= /* EMTPY */;
