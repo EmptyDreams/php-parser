@@ -101,6 +101,7 @@ terminal    T_NULL,             // null
             T_INTERFACE,        // interface
             T_EXTENDS,          // extends
             T_IMPLEMENTS,       // implements
+            T_INSTEADOF,        // insteadof
             T_STATIC,           // static
             T_ABSTRACT,         // abstract
             T_FINAL,            // final
@@ -168,7 +169,10 @@ nonterminal List NT_USE_TARGET_LIST;
 // namespace
 nonterminal IAstNode NT_NAMESPACE_DELEARATION;
 // function
-nonterminal IAstNode NT_FUNC_DECLARATION, NT_METHOD_DECLARATION, NT_ORIGINAL_FUNC_DECLARATION, NT_FUNC_PARAMER;
+nonterminal IAstNode    NT_FUNC_DECLARATION,
+                        NT_METHOD_DECLARATION,
+                        NT_ORIGINAL_FUNC_DECLARATION,
+                        NT_FUNC_PARAMER;
 nonterminal List NT_FUNC_PARAMER_LIST;
 // class
 nonterminal IAstNode NT_CLASS_DECLARATION, NT_ORIGINAL_CLASS_DECLARATION, NT_CLASS_STAT;
@@ -176,6 +180,8 @@ nonterminal List NT_CLASS_STAT_LIST, NT_IMPLEMENT_LIST;
 nonterminal IAstNode NT_TRAIT_DECLARATION;
 nonterminal IAstNode NT_INTERFACE_DECLARATION, NT_INTERFACE_STAT;
 nonterminal List NT_INTERFACE_STAT_LIST;
+nonterminal IAstNode NT_CLASS_PROPERTY, NT_CLASS_CONSTANT, NT_CLASS_USE, NT_CLASS_USE_SUB_STAT;
+nonterminal List NT_CLASS_USE_ITEM_LIST, NT_CLASS_USE_SUB_STAT_LIST;
 
 // 表达式
 nonterminal IAstNode    NT_STATEMENT,
@@ -193,7 +199,8 @@ nonterminal IAstNode    NT_STATEMENT,
                         NT_GOTO_STAT,
                         NT_DECLARE_STAT,
                         NT_USE_STAT,
-                        NT_EMPTY_STAT
+                        NT_EMPTY_STAT,
+                        NT_CONST_STAT
                         ;
 nonterminal IAstNode NT_STATEMENT_LIST;
 
@@ -252,15 +259,8 @@ NT_ORIGINAL_FUNC_DECLARATION ::=
     // function xxx(xxx) { xxx }
     T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
         T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
-    // function xxx() { xxx }
-    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN T_CLOSE_PAREN
-        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
     // function xxx(xxx): xxx { xxx }
     | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
-        T_COLON NT_TYPE:returnType
-        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
-    // function xxx(): xxx { xxx }
-    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN T_CLOSE_PAREN
         T_COLON NT_TYPE:returnType
         T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY;
 // 类方法
@@ -323,6 +323,53 @@ NT_FUNC_PARAMER ::= T_VAR_NAME:name
     | NT_TYPE:type T_VAR_NAME:name;
 NT_FUNC_PARAMER_LIST ::= NT_FUNC_PARAMER:item
     | NT_FUNC_PARAMER_LIST T_COMMA NT_FUNC_PARAMER:item
+    | EMPTY;
+
+NT_CLASS_STAT_LIST ::= NT_CLASS_STAT:statement
+    | NT_CLASS_STAT_LIST NT_CLASS_STAT:statement
+    | EMPTY;
+NT_CLASS_STAT ::= NT_METHOD_DECLARATION:method
+    | NT_CLASS_PROPERTY:property
+    | NT_CLASS_CONSTANT:constant;
+NT_CLASS_PROPERTY ::=
+    // public $xxx;
+    NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_SEMI
+    // public $xxx = xxx;
+    | NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
+    // static $xxx;
+    | T_STATIC:isStatic T_VAR_NAME:name T_SEMI
+    // static $xxx = xxx;
+    | T_STATIC:isStatic T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
+    // public static $xxx;
+    | NT_ACCESS_MODIFIER:accessModifier T_STATIC:isStatic T_VAR_NAME:name T_SEMI
+    // public static $xxx = xxx;
+    | NT_ACCESS_MODIFIER:accessModifier T_STATIC:isStatic T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
+    // static public $xxx;
+    | T_STATIC:isStatic NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_SEMI
+    // static public $xxx = xxx;
+    | T_STATIC:isStatic NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI;
+NT_CLASS_CONSTANT ::=
+    // const xxx = x;
+    T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_CONST_STAT:value T_SEMI
+    // public const xxx = x;
+    | NT_ACCESS_MODIFIER:accessModifier T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_CONST_STAT:value T_SEMI;
+// class 中使用 use 引入 trait 使用的表达式
+NT_CLASS_USE ::=
+    // use xxx, xxx, ...;
+    T_USE NT_CLASS_USE_ITEM_LIST:useList T_SEMI
+    // use xxx { xxx };
+    | T_USE NT_CLASS_USE_ITEM_LIST:useList T_OPEN_CURLY NT_CLASS_USE_SUB_STAT_LIST:subList T_CLOSE_CURLY;
+// use 中的类名列表
+NT_CLASS_USE_ITEM_LIST ::= NT_IDENTIFIER:identifier
+    | NT_CLASS_USE_ITEM_LIST T_COMMA NT_IDENTIFIER:identifier;
+// use 表达式后方的 `{}` 中的内容
+NT_CLASS_USE_SUB_STAT ::=
+    // xxx as xxx;
+    NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias T_SEMI
+    // xxx insteadof xxx, xxx, ...;
+    | NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_SIMPLE_NAME:field T_INSTEADOF NT_CLASS_USE_ITEM_LIST:lowPriority;
+NT_CLASS_USE_SUB_STAT_LIST ::= NT_CLASS_USE_SUB_STAT:statement
+    | NT_CLASS_USE_SUB_STAT_LIST NT_CLASS_USE_SUB_STAT:statement
     | EMPTY;
 
 EMPTY ::= /* EMTPY */;

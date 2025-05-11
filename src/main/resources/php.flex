@@ -264,6 +264,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "interface" { return symbol(PhpSymbols.T_INTERFACE); }
     "extends" { return symbol(PhpSymbols.T_EXTENDS); }
     "implements" { return symbol(PhpSymbols.T_IMPLEMENTS); }
+    "insteadof" { return symbol(PhpSymbols.T_INSTEADOF); }
     "static" { return symbol(PhpSymbols.T_STATIC); }
     "abstract" { return symbol(PhpSymbols.T_ABSTRACT); }
     "final" { return symbol(PhpSymbols.T_FINAL); }
