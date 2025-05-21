@@ -147,7 +147,6 @@ terminal String T_STR_VALUE, T_VAR_NAME, T_SIMPLE_NAME, T_INT_VALUE, T_FLOAT_VAL
 terminal String T_QUALIFIED_NAME;
 terminal T_WHITESPACE;
 
-nonterminal EMPTY;
 // T_SIMPLE_NAME 或 T_QUALIFIED_NAME
 nonterminal IAstNode NT_IDENTIFIER;
 // 权限修饰符
@@ -156,10 +155,12 @@ nonterminal IAstNode NT_ACCESS_MODIFIER;
 nonterminal IAstNode NT_METHOD_MODIFIER;
 nonterminal List NT_METHOD_MODIFIER_LIST;
 
+nonterminal IAstNode NT_CLASS_STATE_OPTLIST;
+
 // 根节点
 nonterminal IAstNode NT_S, NT_PHP_BLOCK;
 // top
-nonterminal IAstNode NT_TOP_STATEMENT;
+nonterminal IAstNode NT_TOP_STATEMENT, NT_TOP_STATEMENT_OPTLIST;
 nonterminal List NT_TOP_STATEMENT_LIST;
 // 类型
 nonterminal IAstNode NT_TYPE;
@@ -172,8 +173,9 @@ nonterminal IAstNode NT_NAMESPACE_DELEARATION;
 nonterminal IAstNode    NT_FUNC_DECLARATION,
                         NT_METHOD_DECLARATION,
                         NT_ORIGINAL_FUNC_DECLARATION,
-                        NT_FUNC_PARAMER;
-nonterminal List NT_FUNC_PARAMER_LIST;
+                        NT_FUNC_PARAMETER,
+                        NT_FUNC_PARAMETER_OPTLIST;
+nonterminal List NT_FUNC_PARAMETER_LIST;
 // class
 nonterminal IAstNode NT_CLASS_DECLARATION, NT_ORIGINAL_CLASS_DECLARATION, NT_CLASS_STAT;
 nonterminal List NT_CLASS_STAT_LIST, NT_IMPLEMENT_LIST;
@@ -184,7 +186,8 @@ nonterminal IAstNode NT_CLASS_PROPERTY, NT_CLASS_CONSTANT, NT_CLASS_USE, NT_CLAS
 nonterminal List NT_CLASS_USE_ITEM_LIST, NT_CLASS_USE_SUB_STAT_LIST;
 
 // 表达式
-nonterminal IAstNode    NT_STATEMENT,
+nonterminal IAstNode    NT_STATEMENT_OPTLIST,
+                        NT_STATEMENT,
                         NT_IF_STAT,
                         NT_WHILE_STAT, NT_DO_WHILD_STAT,
                         NT_FOR_STAT, NT_FOR_EACH_STAT,
@@ -202,7 +205,7 @@ nonterminal IAstNode    NT_STATEMENT,
                         NT_EMPTY_STAT,
                         NT_CONST_STAT
                         ;
-nonterminal IAstNode NT_STATEMENT_LIST;
+nonterminal List NT_STATEMENT_LIST;
 
 start with NT_S;
 
@@ -210,12 +213,11 @@ start with NT_S;
 NT_IDENTIFIER ::= T_SIMPLE_NAME:simpleName | T_QUALIFIED_NAME:qualifiedName;
 // 修饰符
 NT_ACCESS_MODIFIER ::= T_PUBLIC:isPublic | T_PROTECTED:isProtected | T_PRIVATE:isPrivate;
-NT_METHOD_MODIFIER ::= T_STATIC:isStatic | T_FINAL:isFinal | T_ABSTRACT:isAbstract;
+NT_METHOD_MODIFIER ::= T_STATIC:isStatic | T_FINAL:isFinal | T_ABSTRACT:isAbstract | NT_ACCESS_MODIFIER:access_nl_inline;
 NT_METHOD_MODIFIER_LIST ::= NT_METHOD_MODIFIER:item
     | NT_METHOD_MODIFIER_LIST NT_METHOD_MODIFIER:item;
 
-NT_S ::= T_CODE_BLOCK NT_TOP_STATEMENT_LIST:topList
-    | T_CODE_BLOCK;
+NT_S ::= T_CODE_BLOCK NT_TOP_STATEMENT_OPTLIST:list_nl_inline;
 
 // 顶层表达式
 NT_TOP_STATEMENT ::= NT_USE_DECLARATION:use
@@ -226,6 +228,11 @@ NT_TOP_STATEMENT ::= NT_USE_DECLARATION:use
     | NT_INTERFACE_DECLARATION:iface;
 NT_TOP_STATEMENT_LIST ::= NT_TOP_STATEMENT:item
     | NT_TOP_STATEMENT_LIST NT_TOP_STATEMENT:item;
+NT_TOP_STATEMENT_OPTLIST ::= NT_TOP_STATEMENT_LIST:list | /* empty */;
+
+NT_STATEMENT_OPTLIST ::= NT_STATEMENT_LIST:list | /* empty */;
+NT_STATEMENT_LIST ::= NT_STATEMENT:item
+    | NT_STATEMENT_LIST NT_STATEMENT:item;
 
 // 完整的 use 表达式
 NT_USE_DECLARATION ::= T_USE NT_USE_TARGET:target T_SEMI;
@@ -249,7 +256,7 @@ NT_USE_TARGET_LIST ::= NT_USE_TARGET:item
 // namespace
 NT_NAMESPACE_DELEARATION ::= T_NAMESPACE NT_IDENTIFIER:identifier T_SEMI    // namespace xxx;
     // namespace xxx {}
-    | T_NAMESPACE NT_IDENTIFIER:identifier T_OPEN_CURLY NT_TOP_STATEMENT_LIST:statementList T_CLOSE_CURLY;
+    | T_NAMESPACE NT_IDENTIFIER:identifier T_OPEN_CURLY NT_TOP_STATEMENT_OPTLIST:list_nl_inline T_CLOSE_CURLY;
 
 // 顶层函数
 NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:original
@@ -257,18 +264,15 @@ NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:original
 // 函数定义
 NT_ORIGINAL_FUNC_DECLARATION ::=
     // function xxx(xxx) { xxx }
-    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
-        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY
+    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
     // function xxx(xxx): xxx { xxx }
-    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramerList T_CLOSE_PAREN
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
         T_COLON NT_TYPE:returnType
-        T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY;
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY;
 // 类方法
 NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func
-    | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func
-    | NT_ACCESS_MODIFIER:accessModifier NT_ORIGINAL_FUNC_DECLARATION:func
-    | NT_METHOD_MODIFIER_LIST:modifierList NT_ACCESS_MODIFIER:accessModifier NT_ORIGINAL_FUNC_DECLARATION:func
-    | NT_ACCESS_MODIFIER:accessModifier NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func;
+    | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func;
 
 // 类定义
 NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original
@@ -276,25 +280,21 @@ NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original
     | T_ABSTRACT:isAbstract NT_ORIGINAL_CLASS_DECLARATION:original;
 NT_ORIGINAL_CLASS_DECLARATION ::=
     // class xxx { xxx }
-    T_CLASS T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY
+    T_CLASS T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY
     // class xxx extends xxx { xxx }
     | T_CLASS T_SIMPLE_NAME:name T_EXTENDS NT_IDENTIFIER:parent
-        T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY
+        T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY
     // class xxx implements xxx { xxx }
     | T_CLASS T_SIMPLE_NAME:name T_IMPLEMENTS NT_IMPLEMENT_LIST:ifaceList
-        T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY
+        T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY
     // class xxx extends xxx implements xxx { xxx }
     | T_CLASS T_SIMPLE_NAME:name T_EXTENDS NT_IDENTIFIER:parent T_IMPLEMENTS NT_IMPLEMENT_LIST:ifaceList
-        T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY;
+        T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY;
 // 接口实现列表
 NT_IMPLEMENT_LIST ::= NT_IDENTIFIER:iface
     | NT_IMPLEMENT_LIST T_COMMA NT_IDENTIFIER:iface;
-// 类成员列表
-NT_CLASS_STAT_LIST ::= NT_CLASS_STAT:statement
-    | NT_CLASS_STAT_LIST NT_CLASS_STAT:statement
-    | EMPTY;
 // trait class
-NT_TRAIT_DECLARATION ::= T_TRAIT T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STAT_LIST:statementList T_CLOSE_CURLY;
+NT_TRAIT_DECLARATION ::= T_TRAIT T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY;
 // interface
 NT_INTERFACE_DECLARATION ::=
     // interface xxx { xxx }
@@ -303,51 +303,42 @@ NT_INTERFACE_DECLARATION ::=
     | T_INTERFACE T_SIMPLE_NAME:name T_EXTENDS NT_IMPLEMENT_LIST:ifaceList
         T_OPEN_CURLY NT_INTERFACE_STAT_LIST:statementList T_CLOSE_CURLY;
 // 接口成员列表
-NT_INTERFACE_STAT_LIST ::= NT_INTERFACE_STAT:statement
-    | NT_INTERFACE_STAT_LIST T_COMMA NT_INTERFACE_STAT:statement
-    | EMPTY;
+NT_INTERFACE_BODY ::= NT_INTERFACE_STAT_LIST:list | /* empty */;
+NT_INTERFACE_STAT_LIST ::=
+    NT_INTERFACE_STAT:statement
+    | NT_INTERFACE_STAT_LIST T_COMMA NT_INTERFACE_STAT:statement;
 NT_INTERFACE_STAT ::=
     // function xxx(xxx);
-    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramaList T_CLOSE_PAREN T_SEMI
+    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN T_SEMI
     // function xxx(xxx): xxx;
-    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramaList T_CLOSE_PAREN
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN
         T_COLON NT_TYPE:returnType T_SEMI
     // public function xxx(xxx);
-    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramaList T_CLOSE_PAREN T_SEMI
+    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN T_SEMI
     // public function xxx(xxx): xxx;
-    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMER_LIST:paramaList T_CLOSE_PAREN
+    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN
         T_COLON NT_TYPE:returnType T_SEMI;
 
 // 方法参数列表
-NT_FUNC_PARAMER ::= T_VAR_NAME:name
+NT_FUNC_PARAMETER ::= T_VAR_NAME:name
     | NT_TYPE:type T_VAR_NAME:name;
-NT_FUNC_PARAMER_LIST ::= NT_FUNC_PARAMER:item
-    | NT_FUNC_PARAMER_LIST T_COMMA NT_FUNC_PARAMER:item
-    | EMPTY;
+NT_FUNC_PARAMETER_LIST ::= NT_FUNC_PARAMETER:item
+    | NT_FUNC_PARAMETER_LIST T_COMMA NT_FUNC_PARAMETER:item;
+NT_FUNC_PARAMETER_OPTLIST ::= NT_FUNC_PARAMETER_LIST:list | /* empty */;
 
+NT_CLASS_STATE_OPTLIST ::= NT_CLASS_STAT_LIST:list | /* empty */;
 NT_CLASS_STAT_LIST ::= NT_CLASS_STAT:statement
-    | NT_CLASS_STAT_LIST NT_CLASS_STAT:statement
-    | EMPTY;
+    | NT_CLASS_STAT_LIST NT_CLASS_STAT:statement;
 NT_CLASS_STAT ::= NT_METHOD_DECLARATION:method
     | NT_CLASS_PROPERTY:property
     | NT_CLASS_CONSTANT:constant;
+// 类属性（不包含常量）
 NT_CLASS_PROPERTY ::=
     // public $xxx;
-    NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_SEMI
+    NT_METHOD_MODIFIER_LIST:modifiers T_VAR_NAME:name T_SEMI
     // public $xxx = xxx;
-    | NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
-    // static $xxx;
-    | T_STATIC:isStatic T_VAR_NAME:name T_SEMI
-    // static $xxx = xxx;
-    | T_STATIC:isStatic T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
-    // public static $xxx;
-    | NT_ACCESS_MODIFIER:accessModifier T_STATIC:isStatic T_VAR_NAME:name T_SEMI
-    // public static $xxx = xxx;
-    | NT_ACCESS_MODIFIER:accessModifier T_STATIC:isStatic T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI
-    // static public $xxx;
-    | T_STATIC:isStatic NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_SEMI
-    // static public $xxx = xxx;
-    | T_STATIC:isStatic NT_ACCESS_MODIFIER:accessModifier T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI;
+    | NT_METHOD_MODIFIER_LIST:modifiers T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI;
+// 类常量（不包含 `define`）
 NT_CLASS_CONSTANT ::=
     // const xxx = x;
     T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_CONST_STAT:value T_SEMI
@@ -368,8 +359,6 @@ NT_CLASS_USE_SUB_STAT ::=
     NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias T_SEMI
     // xxx insteadof xxx, xxx, ...;
     | NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_SIMPLE_NAME:field T_INSTEADOF NT_CLASS_USE_ITEM_LIST:lowPriority;
-NT_CLASS_USE_SUB_STAT_LIST ::= NT_CLASS_USE_SUB_STAT:statement
-    | NT_CLASS_USE_SUB_STAT_LIST NT_CLASS_USE_SUB_STAT:statement
-    | EMPTY;
-
-EMPTY ::= /* EMTPY */;
+NT_CLASS_USE_SUB_STAT_LIST ::= /* empty */
+    | NT_CLASS_USE_SUB_STAT:statement
+    | NT_CLASS_USE_SUB_STAT_LIST NT_CLASS_USE_SUB_STAT:statement;

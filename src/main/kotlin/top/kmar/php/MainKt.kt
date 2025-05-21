@@ -7,8 +7,8 @@ fun main() {
     val file = File("D:\\Workspace\\jvm\\php-parser\\src\\test\\resources\\test.php")
     val tokenStream = PhpLexer(file.bufferedReader())
     val parser = PhpParser(tokenStream, DefaultSymbolFactory())
-    val symbol = parser.parse()
-    println(symbol)
+    val sym = parser.parse()
+    println(sym)
 //    val file = File("D:\\Workspace\\jvm\\php-parser\\src\\test\\resources\\test.php")
 //    file.bufferedReader().use { reader ->
 //        val lexer = PhpLexer(reader)
