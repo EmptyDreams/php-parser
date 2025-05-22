@@ -182,18 +182,19 @@ nonterminal List NT_CLASS_STAT_LIST, NT_IMPLEMENT_LIST;
 nonterminal IAstNode NT_TRAIT_DECLARATION;
 nonterminal IAstNode NT_INTERFACE_DECLARATION, NT_INTERFACE_STAT;
 nonterminal List NT_INTERFACE_STAT_LIST;
-nonterminal IAstNode NT_CLASS_PROPERTY, NT_CLASS_CONSTANT, NT_CLASS_USE, NT_CLASS_USE_SUB_STAT;
+nonterminal IAstNode NT_CLASS_PROPERTY, NT_CLASS_CONSTANT, NT_CLASS_USE, NT_CLASS_USE_SUB_STAT, NT_CLASS_USE_SUB_STAT_OPTLIST;
 nonterminal List NT_CLASS_USE_ITEM_LIST, NT_CLASS_USE_SUB_STAT_LIST;
 
 // 表达式
 nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_STATEMENT,
-                        NT_IF_STAT,
-                        NT_WHILE_STAT, NT_DO_WHILD_STAT,
+                        NT_BLOCK_STAT,
+                        NT_IF_STAT, NT_ELSEIF_STAT, NT_ELSEIF_OPTLIST, NT_ELSE_STAT,
+                        NT_WHILE_STAT, NT_DO_WHILE_STAT,
                         NT_FOR_STAT, NT_FOR_EACH_STAT,
                         NT_SWITCH_STAT,
                         NT_BREAK_STAT, NT_CONTINUE_STAT, NT_RETURN_STAT,
-                        NT_YIELD_STAT, NT_YIELD_FROOM_STAT,
+                        NT_YIELD_STAT, NT_YIELD_FROM_STAT,
                         NT_GLOBAL_STAT,
                         NT_STATIC_VAR_STAT,
                         NT_ECHO_STAT,
@@ -205,7 +206,59 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_EMPTY_STAT,
                         NT_CONST_STAT
                         ;
-nonterminal List NT_STATEMENT_LIST;
+nonterminal List NT_STATEMENT_LIST, NT_ELSEIF_LIST;
+nonterminal IAstNode NT_BINARY_OP;
+
+precedence left T_ELSE, T_ELSEIF;
+precedence left T_COMMA; // 逗号运算符
+// 赋值运算符组（右结合）
+precedence right
+    T_ASSIGN,
+    T_PLUS_ASSIGN,
+    T_DOT_ASSIGN,
+    T_MINUS_ASSIGN,
+    T_MUL_ASSIGN,
+    T_DIV_ASSIGN,
+    T_MOD_ASSIGN,
+    T_BIT_AND_ASSIGN,
+    T_BIT_OR_ASSIGN,
+    T_BIT_XOR_ASSIGN,
+    T_LEFT_SHIFT_ASSIGN,
+    T_RIGHT_SHIFT_ASSIGN;
+// 逻辑或
+precedence left T_BOOL_OR; // ||
+// 逻辑与
+precedence left T_BOOL_AND; // &&
+// Elvis和空合并
+precedence left T_ELVIS; // ?:
+precedence left T_COALESCE; // ??
+// 比较运算符（非结合）
+precedence nonassoc
+    T_DOUBLE_EQ,
+    T_NOT_DOUBLE_EQ,
+    T_TRIPLE_EQ,
+    T_NOT_TRIPLE_EQ,
+    T_LT,
+    T_GT,
+    T_LT_EQ,
+    T_GT_EQ;
+// 位运算符
+precedence left T_BIT_OR; // |
+precedence left T_BIT_XOR; // ^
+precedence left T_BIT_AND; // &
+// 移位运算符
+precedence left T_LEFT_SHIFT, T_RIGHT_SHIFT; // << >>
+// 算术运算符
+precedence left T_PLUS, T_MINUS, T_DOT; // + -
+precedence left T_MUL, T_DIV, T_MOD; // * / %
+// 幂运算（右结合）
+precedence right T_POW; // **
+// 类型检查
+precedence left T_INSTANCEOF;
+// 对象操作
+precedence left T_SCOPE_RESOLUTION; // ::
+// 函数调用和数组访问（最高）
+precedence left T_OPEN_PAREN, T_OPEN_SQUARE; // () []
 
 start with NT_S;
 
@@ -225,7 +278,8 @@ NT_TOP_STATEMENT ::= NT_USE_DECLARATION:use
     | NT_FUNC_DECLARATION:func
     | NT_CLASS_DECLARATION:clazz
     | NT_TRAIT_DECLARATION:trait
-    | NT_INTERFACE_DECLARATION:iface;
+    | NT_INTERFACE_DECLARATION:iface
+    | NT_STATEMENT:statement;
 NT_TOP_STATEMENT_LIST ::= NT_TOP_STATEMENT:item
     | NT_TOP_STATEMENT_LIST NT_TOP_STATEMENT:item;
 NT_TOP_STATEMENT_OPTLIST ::= NT_TOP_STATEMENT_LIST:list | /* empty */;
@@ -259,8 +313,8 @@ NT_NAMESPACE_DELEARATION ::= T_NAMESPACE NT_IDENTIFIER:identifier T_SEMI    // n
     | T_NAMESPACE NT_IDENTIFIER:identifier T_OPEN_CURLY NT_TOP_STATEMENT_OPTLIST:list_nl_inline T_CLOSE_CURLY;
 
 // 顶层函数
-NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:original
-    | T_FINAL:isFinal NT_ORIGINAL_FUNC_DECLARATION:original;
+NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:original_nl_inline
+    | T_FINAL:isFinal NT_ORIGINAL_FUNC_DECLARATION:original_nl_inline;
 // 函数定义
 NT_ORIGINAL_FUNC_DECLARATION ::=
     // function xxx(xxx) { xxx }
@@ -271,8 +325,8 @@ NT_ORIGINAL_FUNC_DECLARATION ::=
         T_COLON NT_TYPE:returnType
         T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY;
 // 类方法
-NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func
-    | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func;
+NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline
+    | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline;
 
 // 类定义
 NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original
@@ -349,7 +403,7 @@ NT_CLASS_USE ::=
     // use xxx, xxx, ...;
     T_USE NT_CLASS_USE_ITEM_LIST:useList T_SEMI
     // use xxx { xxx };
-    | T_USE NT_CLASS_USE_ITEM_LIST:useList T_OPEN_CURLY NT_CLASS_USE_SUB_STAT_LIST:subList T_CLOSE_CURLY;
+    | T_USE NT_CLASS_USE_ITEM_LIST:useList T_OPEN_CURLY NT_CLASS_USE_SUB_STAT_OPTLIST:sub_inline T_CLOSE_CURLY;
 // use 中的类名列表
 NT_CLASS_USE_ITEM_LIST ::= NT_IDENTIFIER:identifier
     | NT_CLASS_USE_ITEM_LIST T_COMMA NT_IDENTIFIER:identifier;
@@ -359,6 +413,69 @@ NT_CLASS_USE_SUB_STAT ::=
     NT_IDENTIFIER:identifier T_AS T_SIMPLE_NAME:alias T_SEMI
     // xxx insteadof xxx, xxx, ...;
     | NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_SIMPLE_NAME:field T_INSTEADOF NT_CLASS_USE_ITEM_LIST:lowPriority;
-NT_CLASS_USE_SUB_STAT_LIST ::= /* empty */
-    | NT_CLASS_USE_SUB_STAT:statement
+NT_CLASS_USE_SUB_STAT_LIST ::= NT_CLASS_USE_SUB_STAT:statement
     | NT_CLASS_USE_SUB_STAT_LIST NT_CLASS_USE_SUB_STAT:statement;
+NT_CLASS_USE_SUB_STAT_OPTLIST ::= NT_CLASS_USE_SUB_STAT_LIST:list | /* empty */;
+
+NT_STATEMENT ::= T_SIMPLE_NAME:simpleName T_COLON   // xxx:
+    | NT_IF_STAT:ifStatement
+    | NT_WHILE_STAT:whileStatement
+    | NT_DO_WHILE_STAT:doWhileStatement
+    | NT_FOR_STAT:forStatement
+    | NT_FOR_EACH_STAT:foreachStatement
+    | NT_SWITCH_STAT:switchStatement
+    | NT_BREAK_STAT:breakStatement
+    | NT_CONTINUE_STAT:continueStatement
+    | NT_GOTO_STAT:gotoStatement
+    | NT_RETURN_STAT:returnStatement
+    | NT_THROW_STAT:throwStatement
+    | NT_YIELD_STAT:yieldStatement
+    | NT_YIELD_FROM_STAT:yieldFromStatement
+    | NT_GLOBAL_STAT:globalStatement
+    | NT_STATIC_VAR_STAT:staticVarStatement
+    | NT_ECHO_STAT:echoStatement
+    | NT_EXPRESSION_STAT:expressionStatement
+    | NT_TRY_CATCH_STAT:tryCatchStatement
+    | NT_DECLARE_STAT:declareStatement
+    | NT_EMPTY_STAT:emptyStatement
+    | NT_BLOCK_STAT:blockStatement;  // { xxx }
+
+NT_EMPTY_STAT ::= T_SEMI;
+NT_BLOCK_STAT ::= T_OPEN_CURLY T_CLOSE_CURLY;
+
+NT_BINARY_OP ::=
+    T_COMMA:isComma | T_DOT:isDot
+    | T_PLUS:isPlus | T_MINUS:isMinus | T_MUL:isMul | T_DIV:isDiv | T_MOD:isMod
+    | T_ASSIGN:isAssign | T_PLUS_ASSIGN:isPlusAssign | T_DOT_ASSIGN:isDotAssign
+    | T_MINUS_ASSIGN:isMinusAssign | T_MUL_ASSIGN:isMulAssign | T_DIV_ASSIGN:isDivAssign | T_MOD_ASSIGN:isModAssign
+    | T_BIT_AND:isBitAnd | T_BIT_OR:isBitOr | T_BIT_XOR:isBitXor
+    | T_LEFT_SHIFT:isLeftShift | T_RIGHT_SHIFT:isRightShift
+    | T_BIT_AND_ASSIGN:isBitAndAssign | T_BIT_OR_ASSIGN:isBitOrAssign | T_BIT_XOR_ASSIGN:isBitXorAssign
+    | T_LEFT_SHIFT_ASSIGN:isLeftShiftAssign | T_RIGHT_SHIFT_ASSIGN:isRightShiftAssign
+    | T_BOOL_AND:isBoolAnd | T_BOOL_OR:isBoolOr
+    | T_DOUBLE_EQ:isDoubleEq | T_NOT_DOUBLE_EQ:isNotDoubleEq
+    | T_TRIPLE_EQ:isTripleEq | T_NOT_TRIPLE_EQ:isNotTripleEq
+    | T_LT:isLt | T_GT:isGt | T_LT_EQ:isLtEq | T_GT_EQ:isGtEq
+    | T_POW:isPow
+    | T_COALESCE:isCoalesce | T_ELVIS:isElvis;
+
+NT_EXPRESSION_STAT ::=
+    T_VAR_NAME:varName      // $xxx
+    | NT_EXPRESSION_STAT:opLeft NT_BINARY_OP:op NT_EXPRESSION_STAT:opRight    // xxx <op> xxx
+    ;
+
+// if else if 表达式
+NT_IF_STAT ::=
+    // if (xxx): xxx elseif (xxx): xxx else: xxx endif
+    T_IF T_OPEN_PAREN NT_EXPRESSION_STAT:condition T_CLOSE_PAREN T_COLON NT_STATEMENT:statement
+        NT_ELSEIF_OPTLIST:elseIf_inline NT_ELSE_STAT:else_inline T_END_IF
+    // if (xxx) xxx else if (xxx) xxx else xxx
+    | T_IF T_OPEN_PAREN NT_EXPRESSION_STAT:condition T_CLOSE_PAREN NT_STATEMENT:statement
+        NT_ELSEIF_OPTLIST:elseIf_inline NT_ELSE_STAT:else_inline;
+NT_ELSEIF_STAT ::=
+    T_ELSEIF T_OPEN_PAREN NT_EXPRESSION_STAT:condition T_CLOSE_PAREN T_COLON NT_STATEMENT:statement
+    | T_ELSEIF T_OPEN_PAREN NT_EXPRESSION_STAT:condition T_CLOSE_PAREN NT_STATEMENT:statement;
+NT_ELSEIF_LIST ::= NT_ELSEIF_STAT:statement
+    | NT_ELSEIF_LIST NT_ELSEIF_STAT:statement;
+NT_ELSEIF_OPTLIST ::= NT_ELSEIF_LIST:list | /* empty */;
+NT_ELSE_STAT ::= T_ELSE T_COLON NT_STATEMENT:statement | T_ELSE NT_STATEMENT:statement | /* empty */;
