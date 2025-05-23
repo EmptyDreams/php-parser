@@ -316,8 +316,15 @@ NT_FUNC_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:original_nl_inline
     | T_FINAL:isFinal NT_ORIGINAL_FUNC_DECLARATION:original_nl_inline;
 // 函数定义
 NT_ORIGINAL_FUNC_DECLARATION ::=
+    // function &xxx(xxx) { xxx }
+    T_FUNCTION T_BIT_AND:isRef T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
     // function xxx(xxx) { xxx }
-    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // function &xxx(xxx): xxx { xxx }
+    | T_FUNCTION T_BIT_AND:isRef T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
         T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
     // function xxx(xxx): xxx { xxx }
     | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
@@ -328,9 +335,9 @@ NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline
     | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline;
 
 // 类定义
-NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original
-    | T_FINAL:isFinal NT_ORIGINAL_CLASS_DECLARATION:original
-    | T_ABSTRACT:isAbstract NT_ORIGINAL_CLASS_DECLARATION:original;
+NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original_nl_inline
+    | T_FINAL:isFinal NT_ORIGINAL_CLASS_DECLARATION:original_nl_inline
+    | T_ABSTRACT:isAbstract NT_ORIGINAL_CLASS_DECLARATION:original_nl_inline;
 NT_ORIGINAL_CLASS_DECLARATION ::=
     // class xxx { xxx }
     T_CLASS T_SIMPLE_NAME:name T_OPEN_CURLY NT_CLASS_STATE_OPTLIST:list_nl_inline T_CLOSE_CURLY
@@ -361,19 +368,26 @@ NT_INTERFACE_STAT_LIST ::=
     NT_INTERFACE_STAT:statement
     | NT_INTERFACE_STAT_LIST T_COMMA NT_INTERFACE_STAT:statement;
 NT_INTERFACE_STAT ::=
-    // function xxx(xxx);
-    T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN T_SEMI
-    // function xxx(xxx): xxx;
-    | T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN
-        T_COLON NT_TYPE:returnType T_SEMI
-    // public function xxx(xxx);
-    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN T_SEMI
-    // public function xxx(xxx): xxx;
-    | T_PUBLIC T_FUNCTION T_SIMPLE_NAME:name T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:list_nl_inline T_CLOSE_PAREN
-        T_COLON NT_TYPE:returnType T_SEMI;
+    T_PUBLIC NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline
+    | NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline;
 
 // 方法参数列表
-NT_FUNC_PARAMETER ::= T_VAR_NAME:name
+NT_FUNC_PARAMETER ::=
+    // <type> &$xxx = xxx
+    NT_TYPE:type T_BIT_AND:isRef T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
+    // &$xxx = xxx
+    | T_BIT_AND:isRef T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
+    // &$xxx
+    | T_BIT_AND:isRef T_VAR_NAME:name
+    // <type> &$xxx
+    | NT_TYPE:type NT_BIT_AND:isRef T_VAR_NAME:name
+    // $xxx = xxx
+    |T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
+    // <type> $xxx = xxx
+    | NT_TYPE:type NT_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
+    // $xxx
+    | T_VAR_NAME:name
+    // <type> xxx
     | NT_TYPE:type T_VAR_NAME:name;
 NT_FUNC_PARAMETER_LIST ::= NT_FUNC_PARAMETER:item
     | NT_FUNC_PARAMETER_LIST T_COMMA NT_FUNC_PARAMETER:item;
