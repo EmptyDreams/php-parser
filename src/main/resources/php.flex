@@ -200,6 +200,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "*=" { return symbol(PhpSymbols.T_MUL_ASSIGN); }
     "/=" { return symbol(PhpSymbols.T_DIV_ASSIGN); }
     "%=" { return symbol(PhpSymbols.T_MOD_ASSIGN); }
+    "**=" { return symbol(PhpSymbols.T_POW_ASSIGN); }
     "&" { return symbol(PhpSymbols.T_BIT_AND); }
     "|" { return symbol(PhpSymbols.T_BIT_OR); }
     "^" { return symbol(PhpSymbols.T_BIT_XOR); }
@@ -211,6 +212,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "^=" { return symbol(PhpSymbols.T_BIT_XOR_ASSIGN); }
     "<<=" { return symbol(PhpSymbols.T_LEFT_SHIFT_ASSIGN); }
     ">>=" { return symbol(PhpSymbols.T_RIGHT_SHIFT_ASSIGN); }
+    "??=" { return symbol(PhpSymbols.T_COALESCE_ASSIGN); }
     "!" { return symbol(PhpSymbols.T_BOOL_NOT); }
     "&&" { return symbol(PhpSymbols.T_BOOL_AND); }
     "||" { return symbol(PhpSymbols.T_BOOL_OR); }
@@ -218,6 +220,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     ==|<> { return symbol(PhpSymbols.T_NOT_DOUBLE_EQ); }
     "===" { return symbol(PhpSymbols.T_TRIPLE_EQ); }
     "!==" { return symbol(PhpSymbols.T_NOT_TRIPLE_EQ); }
+    "<=>" { return symbol(PhpSymbols.T_SPACESHIP); }
     "<" { return symbol(PhpSymbols.T_LT); }
     ">" { return symbol(PhpSymbols.T_GT); }
     "<=" { return symbol(PhpSymbols.T_LT_EQ); }
