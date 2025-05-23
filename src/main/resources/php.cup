@@ -180,7 +180,8 @@ nonterminal IAstNode    NT_FUNC_DECLARATION,
                         NT_METHOD_DECLARATION,
                         NT_ORIGINAL_FUNC_DECLARATION,
                         NT_FUNC_PARAMETER,
-                        NT_FUNC_PARAMETER_OPTLIST;
+                        NT_FUNC_PARAMETER_OPTLIST,
+                        NT_AYNYMOUS_FUNC_DECLARATION;
 nonterminal List NT_FUNC_PARAMETER_LIST;
 // class
 nonterminal IAstNode NT_CLASS_DECLARATION, NT_ORIGINAL_CLASS_DECLARATION, NT_CLASS_STAT;
@@ -334,6 +335,37 @@ NT_ORIGINAL_FUNC_DECLARATION ::=
 NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline
     | NT_METHOD_MODIFIER_LIST:modifierList NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline;
 
+// 匿名函数
+NT_AYNYMOUS_FUNC_DECLARATION ::=
+    // function(xxx) { xxx }
+    T_FUNCTION T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // function(xxx): xxx { xxx }
+    | T_FUNCTION T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // static function(xxx) { xxx }
+    | T_STATIC:isStatic T_FUNCTION T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // static function(xxx): xxx { xxx }
+    | T_STATIC:isStatic T_FUNCTION T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // function&(xxx) { xxx }
+    | T_FUNCTION T_BIT_AND:isRef T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // function&(xxx): xxx { xxx }
+    | T_FUNCTION T_BIT_AND:isRef T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // static function&(xxx) { xxx }
+    | T_STATIC:isStatic T_FUNCTION T_BIT_AND:isRef T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY
+    // static function&(xxx): xxx { xxx }
+    | T_STATIC:isStatic T_FUNCTION T_BIT_AND:isRef T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameters_inline T_CLOSE_PAREN
+        T_COLON NT_TYPE:returnType
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statements_inline T_CLOSE_CURLY;
+
 // 类定义
 NT_CLASS_DECLARATION ::= NT_ORIGINAL_CLASS_DECLARATION:original_nl_inline
     | T_FINAL:isFinal NT_ORIGINAL_CLASS_DECLARATION:original_nl_inline
@@ -380,11 +412,11 @@ NT_FUNC_PARAMETER ::=
     // &$xxx
     | T_BIT_AND:isRef T_VAR_NAME:name
     // <type> &$xxx
-    | NT_TYPE:type NT_BIT_AND:isRef T_VAR_NAME:name
+    | NT_TYPE:type T_BIT_AND:isRef T_VAR_NAME:name
     // $xxx = xxx
     |T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
     // <type> $xxx = xxx
-    | NT_TYPE:type NT_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
+    | NT_TYPE:type T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:defExpr
     // $xxx
     | T_VAR_NAME:name
     // <type> xxx
@@ -489,6 +521,7 @@ NT_RIGHT_OP ::= T_INC:isInc | T_DEC:isDec;
 
 NT_EXPRESSION ::=
     T_VAR_NAME:varName          // $xxx
+    NT_AYNYMOUS_FUNC_DECLARATION:anonyFunc  // 匿名函数
     | T_INT_VALUE:intValue      // xxx
     | T_FLOAT_VALUE:floatValue  // xxx.xxx
     | T_STR_VALUE:stringValue   // "xxx"
