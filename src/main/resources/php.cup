@@ -208,12 +208,12 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_EXPRESSION_STAT,
                         NT_TRY_CATCH_STAT, NT_THROW_STAT,
                         NT_GOTO_STAT,
-                        NT_DECLARE_STAT,
+                        NT_DECLARE_STAT, NT_DECLARE_PARAM,
                         NT_USE_STAT,
                         NT_EMPTY_STAT,
                         NT_CONST_STAT
                         ;
-nonterminal List NT_STATEMENT_LIST, NT_ELSEIF_LIST, NT_FOR_INIT_LIST, NT_CASE_LIST;
+nonterminal List NT_STATEMENT_LIST, NT_ELSEIF_LIST, NT_FOR_INIT_LIST, NT_CASE_LIST, NT_DECLARE_PARAM_LIST;
 nonterminal IAstNode NT_BINARY_OP, NT_RIGHT_OP, NT_LEFT_OP, NT_CAST_OP;
 
 precedence left T_ELSE, T_ELSEIF;
@@ -558,14 +558,34 @@ NT_FOR_EACH_STAT ::=
        T_CLOSE_PAREN NT_STATEMENT:statement;
 
 NT_SWITCH_STAT ::=
+    // switch (xxx): xxx endswitch;
     T_SWITCH T_OPEN_PAREN NT_EXPRESSION:item T_CLOSE_PAREN T_COLON NT_CASE_LIST:caseList T_END_SWITCH T_SEMI
+    // switch (xxx): endswitch;
     | T_SWITCH T_OPEN_PAREN NT_EXPRESSION:item T_CLOSE_PAREN T_COLON T_END_SWITCH T_SEMI
+    // switch (xxx) { xxx }
     | T_SWITCH T_OPEN_PAREN NT_EXPRESSION:item T_CLOSE_PAREN T_OPEN_CURLY NT_CASE_LIST:caseList T_CLOSE_CURLY
+    // switch (xxx) {}
     | T_SWITCH T_OPEN_PAREN NT_EXPRESSION:item T_CLOSE_PAREN T_OPEN_CURLY T_CLOSE_CURLY;
 NT_CASE_LIST ::= NT_CASE_STAT:statement | NT_CASE_LIST NT_CASE_STAT:statement;
 NT_CASE_STAT ::=
     T_CASE NT_EXPRESSION:condition T_COLON NT_STATEMENT_OPTLIST:statement_inline
     | T_DEFAULT T_COLON NT_STATEMENT_OPTLIST:statement_inline;
 
+// break; | break <int>;
 NT_BREAK_STAT ::= T_BREAK T_SEMI | T_BREAK T_INT_VALUE:breakCount T_SEMI;
+// break; | break <int>;
 NT_CONTINUE_STAT ::= T_CONTINUE T_SEMI | T_CONTINUE T_INT_VALUE:continueCount T_SEMI;
+
+NT_DECLARE_STAT ::=
+    // declare (xxx=xxx, ...) { xxx }
+    T_DECLARE T_OPEN_PAREN NT_DECLARE_PARAM_LIST:paramList T_CLOSE_PAREN
+        T_OPEN_CURLY NT_STATEMENT_OPTLIST:statement_inline T_CLOSE_CURLY
+    // declare (xxx=xxx, ...);
+    | T_DECLARE T_OPEN_PAREN NT_DECLARE_PARAM_LIST:paramList T_CLOSE_PAREN T_SEMI;
+NT_DECLARE_PARAM ::=
+    // xxx=<int>
+    T_SIMPLE_NAME:key T_ASSIGN T_INT_VALUE:intValue
+    // xxx=<string>
+    | T_SIMPLE_NAME:key T_ASSIGN T_STR_VALUE:stringValue;
+NT_DECLARE_PARAM_LIST ::= NT_DECLARE_PARAM:item
+    | NT_DECLARE_PARAM_LIST T_COMMA NT_DECLARE_PARAM:item;
