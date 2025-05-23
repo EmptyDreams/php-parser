@@ -200,6 +200,7 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_FOR_STAT, NT_FOR_EACH_STAT, NT_FOR_INIT,
                         NT_SWITCH_STAT, NT_CASE_STAT,
                         NT_BREAK_STAT, NT_CONTINUE_STAT, NT_RETURN_STAT,
+                        NT_REQUIRE_STAT, NT_INCLUDE_STAT,
                         NT_YIELD_STAT, NT_YIELD_FROM_STAT,
                         NT_GLOBAL_STAT,
                         NT_STATIC_VAR_STAT,
@@ -589,3 +590,14 @@ NT_DECLARE_PARAM ::=
     | T_SIMPLE_NAME:key T_ASSIGN T_STR_VALUE:stringValue;
 NT_DECLARE_PARAM_LIST ::= NT_DECLARE_PARAM:item
     | NT_DECLARE_PARAM_LIST T_COMMA NT_DECLARE_PARAM:item;
+
+// return; | return xxx;
+NT_RETURN_STAT ::= T_RETURN T_SEMI | T_RETURN NT_EXPRESSION_STAT:statement;
+// require xxx; | require_once xxx;
+NT_REQUIRE_STAT ::= T_REQUIRE:isRequire T_STR_VALUE:file T_SEMI
+    | T_REQUIRE_ONCE:isRequireOnce T_STR_VALUE:file T_SEMI;
+// include xxx; | include_once xxx;
+NT_INCLUDE_STAT ::= T_INCLUDE:isInclude T_STR_VALUE:file T_SEMI
+    | T_INCLUDE_ONCE:isIncludeOnce T_STR_VALUE:file T_SEMI;
+// goto xxx;
+NT_GOTO_STAT ::= T_GOTO T_SIMPLE_NAME:label T_SEMI;
