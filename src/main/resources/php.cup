@@ -601,3 +601,9 @@ NT_INCLUDE_STAT ::= T_INCLUDE:isInclude T_STR_VALUE:file T_SEMI
     | T_INCLUDE_ONCE:isIncludeOnce T_STR_VALUE:file T_SEMI;
 // goto xxx;
 NT_GOTO_STAT ::= T_GOTO T_SIMPLE_NAME:label T_SEMI;
+
+NT_YIELD_STAT ::= T_YIELD T_SEMI    // yield;
+    | T_YIELD NT_EXPRESSION_STAT:valueExpr  // yield xxx;
+    | T_YIELD NT_EXPRESSION:keyExpr T_DOUBLE_ARROW NT_EXPRESSION_STAT:valueExpr;    // yield xxx => xxx;
+// yield from xxx;
+NT_YIELD_FROM_STAT ::= T_YIELD_FROM NT_EXPRESSION_STAT:expr;
