@@ -198,7 +198,8 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_BLOCK_STAT,
                         NT_IF_STAT, NT_ELSEIF_STAT, NT_ELSEIF_OPTLIST, NT_ELSE_STAT,
                         NT_WHILE_STAT, NT_DO_WHILE_STAT,
-                        NT_FOR_STAT, NT_FOR_EACH_STAT, NT_FOR_INIT,
+                        NT_FOR_STAT, NT_FOR_EACH_STAT,
+                        NT_VAR_INIT_EXPR,
                         NT_SWITCH_STAT, NT_CASE_STAT,
                         NT_BREAK_STAT, NT_CONTINUE_STAT, NT_RETURN_STAT,
                         NT_REQUIRE_STAT, NT_INCLUDE_STAT,
@@ -215,7 +216,12 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_EMPTY_STAT,
                         NT_CONST_STAT
                         ;
-nonterminal List NT_STATEMENT_LIST, NT_ELSEIF_LIST, NT_FOR_INIT_LIST, NT_CASE_LIST, NT_DECLARE_PARAM_LIST;
+nonterminal List    NT_STATEMENT_LIST,      // 语句列表
+                    NT_ELSEIF_LIST,         // elseif 列表
+                    NT_VAR_INIT_EXPR_LIST,  // 变量初始化列表
+                    NT_CASE_LIST,           // case 列表
+                    NT_DECLARE_PARAM_LIST,  // declare 参数列表
+                    NT_VAR_LIST;            // 变量名列表
 nonterminal IAstNode NT_BINARY_OP, NT_RIGHT_OP, NT_LEFT_OP, NT_CAST_OP;
 
 precedence left T_ELSE, T_ELSEIF;
@@ -492,7 +498,7 @@ NT_BLOCK_STAT ::= T_OPEN_CURLY T_CLOSE_CURLY;
 NT_BINARY_OP ::=
     T_COMMA:isComma | T_DOT:isDot
     | T_PLUS:isPlus | T_MINUS:isMinus | T_MUL:isMul | T_DIV:isDiv | T_MOD:isMod
-    | T_ASSIGN:isAssign | T_PLUS_ASSIGN:isPlusAssign | T_DOT_ASSIGN:isDotAssign
+    | T_PLUS_ASSIGN:isPlusAssign | T_DOT_ASSIGN:isDotAssign
     | T_MINUS_ASSIGN:isMinusAssign | T_MUL_ASSIGN:isMulAssign | T_DIV_ASSIGN:isDivAssign | T_MOD_ASSIGN:isModAssign
     | T_BIT_AND:isBitAnd | T_BIT_OR:isBitOr | T_BIT_XOR:isBitXor
     | T_LOW_BOOL_OR:isLowBoolOr | T_LOW_BOOL_AND:isLowBoolAnd | T_LOW_BOOL_XOR:isLowBoolXor
@@ -526,6 +532,7 @@ NT_EXPRESSION ::=
     | T_FLOAT_VALUE:floatValue  // xxx.xxx
     | T_STR_VALUE:stringValue   // "xxx"
     | NT_EXPRESSION:opLeft NT_BINARY_OP:midOp NT_EXPRESSION:opRight    // xxx <op> xxx
+    | NT_VAR_INIT_EXPR:init_nl_inline   // $xxx = xxx
     | NT_LEFT_OP:lop NT_EXPRESSION:opRight %prec T_AT
     | NT_EXPRESSION:opLeft NT_RIGHT_OP:rop
     ;
@@ -559,13 +566,13 @@ NT_WHILE_STAT ::=
 NT_DO_WHILE_STAT ::=
     T_DO NT_STATEMENT:statement T_WHILE T_OPEN_PAREN NT_EXPRESSION:condition T_CLOSE_PAREN T_SEMI;
 
-NT_FOR_INIT ::= T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:statement;
-NT_FOR_INIT_LIST ::= NT_FOR_INIT:statement
-    | NT_FOR_INIT_LIST NT_FOR_INIT:statement;
+NT_VAR_INIT_EXPR ::= T_VAR_NAME:varName T_ASSIGN NT_EXPRESSION:initExpr;
+NT_VAR_INIT_EXPR_LIST ::= NT_VAR_INIT_EXPR:statement
+    | NT_VAR_INIT_EXPR_LIST NT_VAR_INIT_EXPR:statement;
 NT_FOR_STAT ::=
     // for (xxx; xxx; xxx): xxx endfor
     T_FOR T_OPEN_PAREN
-        NT_FOR_INIT_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition NT_EXPRESSION:loopStatement
+        NT_VAR_INIT_EXPR_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition NT_EXPRESSION:loopStatement
         T_CLOSE_PAREN T_COLON NT_STATEMENT:statement T_END_FOR
     // for (; xxx; xxx): xxx endfor
     | T_FOR T_OPEN_PAREN
@@ -573,7 +580,7 @@ NT_FOR_STAT ::=
         T_CLOSE_PAREN T_COLON NT_STATEMENT:statement T_END_FOR
     // for (xxx; xxx; xxx) xxx
     | T_FOR T_OPEN_PAREN
-        NT_FOR_INIT_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition NT_EXPRESSION:loopStatement
+        NT_VAR_INIT_EXPR_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition NT_EXPRESSION:loopStatement
         T_CLOSE_PAREN NT_STATEMENT:statement
     // for (; xxx; xxx) xxx
     | T_FOR T_OPEN_PAREN
@@ -581,7 +588,7 @@ NT_FOR_STAT ::=
         T_CLOSE_PAREN NT_STATEMENT:statement
     // for (xxx; xxx;) xxx
     | T_FOR T_OPEN_PAREN
-        NT_FOR_INIT_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition
+        NT_VAR_INIT_EXPR_LIST:initList T_SEMI NT_EXPRESSION_STAT:condition
         T_CLOSE_PAREN NT_STATEMENT:statement
     // for (; xxx;) xxx
     | T_FOR T_OPEN_PAREN
@@ -654,3 +661,7 @@ NT_YIELD_STAT ::= T_YIELD T_SEMI    // yield;
     | T_YIELD NT_EXPRESSION:keyExpr T_DOUBLE_ARROW NT_EXPRESSION_STAT:valueExpr;    // yield xxx => xxx;
 // yield from xxx;
 NT_YIELD_FROM_STAT ::= T_YIELD_FROM NT_EXPRESSION_STAT:expr;
+
+NT_GLOBAL_STAT ::= T_GLOBAL NT_VAR_LIST:varList T_SEMI;
+NT_VAR_LIST ::= T_VAR_NAME:item | NT_VAR_LIST T_COMMA T_VAR_NAME:item;
+NT_STATIC_VAR_STAT ::= T_STATIC NT_VAR_INIT_EXPR_LIST:varList T_SEMI;
