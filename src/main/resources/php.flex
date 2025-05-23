@@ -262,7 +262,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "finally" { return symbol(PhpSymbols.T_FINALLY); }
     "function" { return symbol(PhpSymbols.T_FUNCTION); }
     "class" { return symbol(PhpSymbols.T_CLASS); }
-    "enum" { return symbol(PhpSymbols.T_ENUM); }
+//    "enum" { return symbol(PhpSymbols.T_ENUM); }
     "trait" { return symbol(PhpSymbols.T_TRAIT); }
     "interface" { return symbol(PhpSymbols.T_INTERFACE); }
     "extends" { return symbol(PhpSymbols.T_EXTENDS); }

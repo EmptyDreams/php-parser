@@ -102,7 +102,7 @@ terminal    T_NULL,             // null
             T_FINALLY,          // finally
             T_FUNCTION,         // function
             T_CLASS,            // class
-            T_ENUM,             // enum
+//            T_ENUM,             // enum
             T_TRAIT,            // trait
             T_INTERFACE,        // interface
             T_EXTENDS,          // extends
@@ -686,3 +686,5 @@ NT_CATCH_STAT ::= T_CATCH T_OPEN_PAREN NT_IDENTIFIER:exceptionClass T_VAR_NAME:v
 NT_CATCH_LIST ::= NT_CATCH_STAT:item | NT_CATCH_LIST NT_CATCH_STAT:item;
 // finally { xxx }
 NT_FINALLY_STAT ::= T_FINALLY T_OPEN_CURLY NT_STATEMENT_OPTLIST:statement_inline T_CLOSE_CURLY;
+
+NT_THROW_STAT ::= T_THROW NT_EXPRESSION_STAT:expr;
