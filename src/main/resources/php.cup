@@ -214,7 +214,11 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_DECLARE_STAT, NT_DECLARE_PARAM,
                         NT_USE_STAT,
                         NT_EMPTY_STAT,
-                        NT_CONST_STAT
+                        NT_CONST_STAT,
+                        NT_NEW_EXPR,
+                        NT_ARRAY_CREATE_EXPR, NT_ARRAY_CREATE_INIT_EXPR,
+                        NT_ARRAY_ACCESS,
+                        NT_OP_EXPR
                         ;
 nonterminal List    NT_STATEMENT_LIST,      // 语句列表
                     NT_ELSEIF_LIST,         // elseif 列表
@@ -223,7 +227,8 @@ nonterminal List    NT_STATEMENT_LIST,      // 语句列表
                     NT_DECLARE_PARAM_LIST,  // declare 参数列表，逗号分隔
                     NT_VAR_LIST,            // 变量名列表，逗号分隔
                     NT_EXPR_LIST,           // 表达式列表，逗号分隔
-                    NT_CATCH_LIST;          // catch 列表
+                    NT_CATCH_LIST,          // catch 列表
+                    NT_ARRAY_CREATE_INIT_EXPR_LIST; // array 初始化列表
 nonterminal IAstNode NT_BINARY_OP, NT_RIGHT_OP, NT_LEFT_OP, NT_CAST_OP;
 
 precedence left T_ELSE, T_ELSEIF;
@@ -267,6 +272,7 @@ precedence left T_INSTANCEOF;   // instanceof
 precedence right T_AT, T_INC, T_DEC, T_BIT_NOT; // @ ++ -- ~
 precedence right T_POW; // **
 precedence right T_CLONE, T_NEW;    // clone new
+precedence left T_OPEN_SQUARE;
 
 start with NT_S;
 
@@ -530,17 +536,33 @@ NT_RIGHT_OP ::= T_INC:isInc | T_DEC:isDec;
 
 NT_EXPRESSION ::=
     T_VAR_NAME:varName          // $xxx
-    NT_AYNYMOUS_FUNC_DECLARATION:anonyFunc  // 匿名函数
-    | T_INT_VALUE:intValue      // xxx
-    | T_FLOAT_VALUE:floatValue  // xxx.xxx
-    | T_STR_VALUE:stringValue   // "xxx"
-    | NT_EXPRESSION:opLeft NT_BINARY_OP:midOp NT_EXPRESSION:opRight    // xxx <op> xxx
-    | NT_VAR_INIT_EXPR:init_nl_inline   // $xxx = xxx
-    | NT_LEFT_OP:lop NT_EXPRESSION:opRight %prec T_AT
-    | NT_EXPRESSION:opLeft NT_RIGHT_OP:rop
+    | T_INT_VALUE:intValue
+    | T_FLOAT_VALUE:floatValue
+    | T_STR_VALUE:stringValue
+    | T_TRUE:isTrue
+    | T_FALSE:isFalse
+    | T_CLONE NT_EXPRESSION:cloneExpr           // clone xxx
+    | NT_NEW_EXPR:newExpr                       // new xxx
+    | NT_ARRAY_CREATE_EXPR:newArrayExpr         // 构造数组/对象
+    | NT_AYNYMOUS_FUNC_DECLARATION:anonyFunc    // 匿名函数
+    | NT_ARRAY_ACCESS:arrayAccess               // 数组/对象访问
+    | NT_OP_EXPR:opExpr
+    | T_OPEN_PAREN NT_EXPRESSION:subExpr T_CLOSE_PAREN  // (xxx)
     ;
 NT_EXPRESSION_STAT ::= NT_EXPRESSION:state_nl_inline T_SEMI;
 NT_EXPR_LIST ::= NT_EXPRESSION:expr | NT_EXPR_LIST T_COMMA NT_EXPRESSION:expr;
+
+// xxx[xxx]
+NT_ARRAY_ACCESS ::= NT_EXPRESSION:src T_OPEN_SQUARE NT_EXPRESSION:index T_CLOSE_SQUARE;
+NT_OP_EXPR ::=
+    // xxx <op> xxx
+    NT_EXPRESSION:opLeft NT_BINARY_OP:midOp NT_EXPRESSION:opRight
+    // $xxx = xxx
+    | NT_VAR_INIT_EXPR:init_nl_inline
+    // <op> xxx
+    | NT_LEFT_OP:lop NT_EXPRESSION:opRight %prec T_AT
+    // xxx <op>
+    | NT_EXPRESSION:opLeft NT_RIGHT_OP:rop;
 
 // if else if 表达式
 NT_IF_STAT ::=
@@ -688,3 +710,27 @@ NT_CATCH_LIST ::= NT_CATCH_STAT:item | NT_CATCH_LIST NT_CATCH_STAT:item;
 NT_FINALLY_STAT ::= T_FINALLY T_OPEN_CURLY NT_STATEMENT_OPTLIST:statement_inline T_CLOSE_CURLY;
 
 NT_THROW_STAT ::= T_THROW NT_EXPRESSION_STAT:expr;
+
+NT_NEW_EXPR ::=
+    T_NEW NT_IDENTIFIER:className T_OPEN_PAREN NT_EXPR_LIST:paramList T_CLOSE_PAREN
+    | T_NEW NT_IDENTIFIER:className T_OPEN_PAREN T_CLOSE_PAREN
+    | T_NEW NT_IDENTIFIER:className;
+
+NT_ARRAY_CREATE_EXPR ::=
+    // array(xxx => xxx, ...,)
+    T_ARRAY T_OPEN_PAREN NT_ARRAY_CREATE_INIT_EXPR_LIST:initList T_COMMA T_CLOSE_PAREN
+    // array(xxx => xxx, ...)
+    | T_ARRAY T_OPEN_PAREN NT_ARRAY_CREATE_INIT_EXPR_LIST:initList T_CLOSE_PAREN
+    // array()
+    | T_ARRAY T_OPEN_PAREN T_CLOSE_PAREN
+    // [xxx => xxx, ...,]
+    | T_OPEN_SQUARE NT_ARRAY_CREATE_INIT_EXPR_LIST:initList T_COMMA T_CLOSE_SQUARE
+    // [xxx => xxx, ...]
+    | T_OPEN_SQUARE NT_ARRAY_CREATE_INIT_EXPR_LIST:initList T_CLOSE_SQUARE
+    // []
+    | T_OPEN_SQUARE T_CLOSE_SQUARE;
+NT_ARRAY_CREATE_INIT_EXPR ::=
+    NT_EXPRESSION:keyExpr T_DOUBLE_ARROW NT_EXPRESSION:valueExpr
+    | NT_EXPRESSION:valueExpr;
+NT_ARRAY_CREATE_INIT_EXPR_LIST ::= NT_ARRAY_CREATE_INIT_EXPR:item
+    | NT_ARRAY_CREATE_INIT_EXPR_LIST T_COMMA NT_ARRAY_CREATE_INIT_EXPR:item;
