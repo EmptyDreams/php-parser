@@ -229,7 +229,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     ":" { return symbol(PhpSymbols.T_COLON); }
     "**" { return symbol(PhpSymbols.T_POW); }
     "??" { return symbol(PhpSymbols.T_COALESCE); }
-    "?:" { return symbol(PhpSymbols.T_ELVIS); }
+    "$" { return symbol(PhpSymbols.T_DOLLAR); }
     "@" { return symbol(PhpSymbols.T_AT); }
 
     "null" { return symbol(PhpSymbols.T_NULL); }
@@ -301,9 +301,6 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "require_once" { return symbol(PhpSymbols.T_REQUIRE_ONCE); }
     "include" { return symbol(PhpSymbols.T_INCLUDE); }
     "include_once" { return symbol(PhpSymbols.T_INCLUDE_ONCE); }
-    "eval" { return symbol(PhpSymbols.T_EVAL); }
-    "exit" { return symbol(PhpSymbols.T_EXIT); }
-    "die" { return symbol(PhpSymbols.T_DIE); }
     "declare" { return symbol(PhpSymbols.T_DECLARE); }
     "self" { return symbol(PhpSymbols.T_SELF); }
     "parent" { return symbol(PhpSymbols.T_PARENT); }
