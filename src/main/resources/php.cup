@@ -21,7 +21,7 @@ terminal    T_SEMI,        // ;
             T_DOT,              // .
             T_DOUBLE_ARROW,     // =>
             T_SINGLE_ARROW,     // ->
-            T_ELLIPSIS,         // ...
+//            T_ELLIPSIS,         // ...
             T_SCOPE_RESOLUTION, // ::
             T_PLUS,             // +
             T_MINUS,            // -
@@ -147,8 +147,8 @@ terminal    T_NULL,             // null
 
 // 值
 terminal String T_STR_VALUE, T_VAR_NAME, T_SIMPLE_NAME, T_INT_VALUE, T_FLOAT_VALUE, T_FLOAT_E_VALUE;
+terminal String T_STR_PLACEHOLDER;
 terminal String T_QUALIFIED_NAME;
-terminal T_WHITESPACE;
 
 // T_SIMPLE_NAME 或 T_QUALIFIED_NAME
 nonterminal IAstNode NT_IDENTIFIER;
@@ -161,7 +161,7 @@ nonterminal List NT_METHOD_MODIFIER_LIST;
 nonterminal IAstNode NT_CLASS_STATE_OPTLIST;
 
 // 根节点
-nonterminal IAstNode NT_S, NT_PHP_BLOCK;
+nonterminal IAstNode NT_S;
 // top
 nonterminal IAstNode NT_TOP_STATEMENT, NT_TOP_STATEMENT_OPTLIST;
 nonterminal List NT_TOP_STATEMENT_LIST;
@@ -204,34 +204,40 @@ nonterminal IAstNode    NT_STATEMENT_OPTLIST,
                         NT_REQUIRE_STAT, NT_INCLUDE_STAT,
                         NT_YIELD_STAT, NT_YIELD_FROM_STAT,
                         NT_GLOBAL_STAT,
-                        NT_STATIC_VAR_STAT,
+                        NT_STATIC_VAR_STAT, NT_STATIC_VAR_INIT_EXPR,
                         NT_EXPRESSION,
                         NT_EXPRESSION_STAT,
                         NT_TRY_CATCH_STAT, NT_TRY_STAT, NT_CATCH_STAT, NT_FINALLY_STAT,
                         NT_THROW_STAT,
                         NT_GOTO_STAT,
                         NT_DECLARE_STAT, NT_DECLARE_PARAM,
-                        NT_USE_STAT,
                         NT_EMPTY_STAT,
-                        NT_CONST_STAT,
                         NT_NEW_EXPR,
                         NT_ARRAY_CREATE_EXPR, NT_ARRAY_CREATE_INIT_EXPR,
                         NT_ARRAY_ACCESS,
                         NT_OP_EXPR,
                         NT_CONSTANT_VALUE,
+                        NT_REF_EXPR,
                         NT_FUNC_CALL_EXPR,
                         NT_CLASS_ACCESS_EXPR,
-                        NT_CLASS_STATIC_ACCESS_EXPR
+                        NT_CLASS_STATIC_ACCESS_EXPR,
+                        NT_CLASS_PARENT_ACCESS_EXPR,
+                        NT_STRING_EXPR, NT_COMMON_STR_EXPR, NT_TEMPLATE_STR_EXPR, NT_TEMPLATE_STR_ITEM, NT_STRING_INLINE_EXPR,
+                        NT_CMD_STRING_EXPR,
+                        NT_INSTANCEOF_EXPR,
+                        NT_CLASS_LITERAL
                         ;
 nonterminal List    NT_STATEMENT_LIST,      // 语句列表
                     NT_ELSEIF_LIST,         // elseif 列表
-                    NT_ASSIGN_EXPR_LIST,  // 变量初始化列表
+                    NT_ASSIGN_EXPR_LIST,    // 变量初始化列表
                     NT_CASE_LIST,           // case 列表
                     NT_DECLARE_PARAM_LIST,  // declare 参数列表，逗号分隔
                     NT_VAR_LIST,            // 变量名列表，逗号分隔
                     NT_EXPR_LIST,           // 表达式列表，逗号分隔
                     NT_CATCH_LIST,          // catch 列表
-                    NT_ARRAY_CREATE_INIT_EXPR_LIST; // array 初始化列表
+                    NT_ARRAY_CREATE_INIT_EXPR_LIST, // array 初始化列表
+                    NT_STRING_EXPR_LIST,    // 字符串表达式列表
+                    NT_STATIC_VAR_INIT_EXPR_LIST;   // 静态变量初始化列表
 nonterminal IAstNode NT_BINARY_OP, NT_RIGHT_OP, NT_LEFT_OP, NT_CAST_OP;
 
 precedence left T_ELSE, T_ELSEIF;
@@ -273,7 +279,13 @@ precedence left T_INSTANCEOF;   // instanceof
 precedence right T_AT, T_INC, T_DEC, T_BIT_NOT; // @ ++ -- ~
 precedence right T_POW; // **
 precedence right T_CLONE, T_NEW;    // clone new
-precedence left T_OPEN_SQUARE, T_OPEN_PAREN, T_SINGLE_ARROW;
+precedence left T_OPEN_SQUARE,
+                T_OPEN_PAREN,
+                T_SINGLE_ARROW,
+                T_OPEN_DOLLAR_CURLY,
+                T_OPEN_CURLY,
+                T_STR_PLACEHOLDER,
+                T_STR_VALUE;
 
 start with NT_S;
 
@@ -348,8 +360,8 @@ NT_METHOD_DECLARATION ::= NT_ORIGINAL_FUNC_DECLARATION:func_nl_inline
 
 // 匿名函数
 NT_AYNYMOUS_FUNC_DECLARATION ::=
-    T_STATIC:isStatic NT_AYNYMOUS_FUNC_ORIGINAL:original_nl_inline
-    | NT_AYNYMOUS_FUNC_ORIGINAL:original_nl_inline;
+//    T_STATIC:isStatic NT_AYNYMOUS_FUNC_ORIGINAL:original_nl_inline
+    NT_AYNYMOUS_FUNC_ORIGINAL:original_nl_inline;
 NT_AYNYMOUS_FUNC_ORIGINAL ::=
     // function&(xxx) { xxx }
     T_FUNCTION T_BIT_AND:isRef NT_FUNC_PARAM_WITH_BLOCK:block_nl_inline
@@ -425,14 +437,20 @@ NT_CLASS_STAT ::= NT_METHOD_DECLARATION:method
 NT_CLASS_PROPERTY ::=
     // public $xxx;
     NT_METHOD_MODIFIER_LIST:modifiers T_VAR_NAME:name T_SEMI
+    // var $xxx;
+    | T_VAR:isVar T_VAR_NAME:name T_SEMI
     // public $xxx = xxx;
-    | NT_METHOD_MODIFIER_LIST:modifiers T_VAR_NAME:name T_ASSIGN NT_EXPRESSION_STAT:value T_SEMI;
+    | NT_METHOD_MODIFIER_LIST:modifiers T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:value T_SEMI
+    // var $xxx = xxx;
+    | T_VAR:isVar T_VAR_NAME:name T_ASSIGN NT_EXPRESSION:value T_SEMI
+    // use xxx
+    | NT_CLASS_USE:use;
 // 类常量（不包含 `define`）
 NT_CLASS_CONSTANT ::=
     // const xxx = x;
-    T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_CONST_STAT:value T_SEMI
+    T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_EXPRESSION:valueExpr T_SEMI
     // public const xxx = x;
-    | NT_ACCESS_MODIFIER:accessModifier T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_CONST_STAT:value T_SEMI;
+    | NT_ACCESS_MODIFIER:accessModifier T_CONST T_SIMPLE_NAME:name T_ASSIGN NT_EXPRESSION:valueExpr T_SEMI;
 // class 中使用 use 引入 trait 使用的表达式
 NT_CLASS_USE ::=
     // use xxx, xxx, ...;
@@ -477,7 +495,7 @@ NT_STATEMENT ::=
     | T_ECHO NT_EXPR_LIST:echoList;
 
 NT_EMPTY_STAT ::= T_SEMI;
-NT_BLOCK_STAT ::= T_OPEN_CURLY T_CLOSE_CURLY;
+NT_BLOCK_STAT ::= T_OPEN_CURLY T_CLOSE_CURLY | T_OPEN_CURLY NT_STATEMENT_LIST:statementList T_CLOSE_CURLY;
 
 NT_BINARY_OP ::=
     T_DOT:isDot
@@ -488,7 +506,7 @@ NT_BINARY_OP ::=
     | T_BOOL_AND:isBoolAnd | T_BOOL_OR:isBoolOr
     | T_DOUBLE_EQ:isDoubleEq | T_NOT_DOUBLE_EQ:isNotDoubleEq
     | T_TRIPLE_EQ:isTripleEq | T_NOT_TRIPLE_EQ:isNotTripleEq
-    | T_LT:isLt | T_GT:isGt | T_LT_EQ:isLtEq | T_GT_EQ:isGtEq
+    | T_LT:isLt | T_GT:isGt | T_LT_EQ:isLtEq | T_GT_EQ:isGtEq | T_SPACESHIP:isSpaceship
     | T_POW:isPow
     | T_COALESCE:isCoalesce;
 NT_CAST_OP ::=
@@ -500,6 +518,7 @@ NT_CAST_OP ::=
     | T_OPEN_PAREN T_BOOL:isCastBool T_CLOSE_PAREN;
 NT_LEFT_OP ::=
     NT_RIGHT_OP:inc_nl_inline
+    | T_AT:isAt
     | T_BOOL_NOT:isBoolNot | T_BIT_NOT:isBitNot
     | T_PLUS:isPlus | T_MINUS:isMinus
     | NT_CAST_OP:cast_nl_inline
@@ -508,7 +527,7 @@ NT_RIGHT_OP ::= T_INC:isInc | T_DEC:isDec;
 
 NT_EXPRESSION ::=
     NT_CONSTANT_VALUE:constValue                // 字面常量
-    | T_VAR_NAME:varRef                         // 变量引用
+    | T_VAR_NAME:varRef                         // 变量
     | T_CLONE NT_EXPRESSION:cloneExpr           // clone xxx
     | NT_NEW_EXPR:newExpr                       // new xxx
     | NT_AYNYMOUS_FUNC_DECLARATION:anonyFunc    // 匿名函数
@@ -517,24 +536,36 @@ NT_EXPRESSION ::=
     | NT_CLASS_ACCESS_EXPR:classAccessExpr      // 类访问
     | NT_OP_EXPR:opExpr                         // 运算符
     | NT_ASSIGN_EXPR:assignExpr                 // 赋值
+    | NT_REF_EXPR:refExpr                       // 引用
+    | NT_CMD_STRING_EXPR:cmdExpr                // 命令字符串
+    | NT_INSTANCEOF_EXPR:instanceofExpr         // instanceof
+    | NT_REQUIRE_STAT:requireExpr               // require
+    | NT_INCLUDE_STAT:includeExpr               // include
+    | NT_CLASS_PARENT_ACCESS_EXPR:classParentAccessExpr // 父类访问
     | NT_CLASS_STATIC_ACCESS_EXPR:classStaticAccessExpr // 静态成员访问
     | T_OPEN_PAREN NT_EXPRESSION:subExpr T_CLOSE_PAREN  // (xxx)
     ;
-NT_EXPRESSION_STAT ::= NT_EXPRESSION:state_nl_inline T_SEMI;
+NT_EXPRESSION_STAT ::= NT_EXPRESSION:statement T_SEMI;
 NT_EXPR_LIST ::= NT_EXPRESSION:expr | NT_EXPR_LIST T_COMMA NT_EXPRESSION:expr;
 
+NT_REF_EXPR ::= T_BIT_AND NT_EXPRESSION:expr;
 // 字面常量
 NT_CONSTANT_VALUE ::=
     T_INT_VALUE:intValue
     | T_FLOAT_VALUE:floatValue
-    | T_STR_VALUE:stringValue
+    | T_FLOAT_E_VALUE:floatEValue
+    | NT_STRING_EXPR:stringValue
     | T_TRUE:isTrue
     | T_FALSE:isFalse
     | T_NULL:isNull
     | T_SIMPLE_NAME:constName
-    | NT_ARRAY_CREATE_EXPR:newArrayExpr;
-// xxx[xxx]
-NT_ARRAY_ACCESS ::= NT_EXPRESSION:src T_OPEN_SQUARE NT_EXPRESSION:index T_CLOSE_SQUARE;
+    | NT_ARRAY_CREATE_EXPR:newArrayExpr
+    | NT_CLASS_LITERAL:classLiteral;
+NT_ARRAY_ACCESS ::=
+    // xxx[xxx]
+    NT_EXPRESSION:src T_OPEN_SQUARE NT_EXPRESSION:index T_CLOSE_SQUARE
+    // xxx[]
+    | NT_EXPRESSION:src T_OPEN_SQUARE T_CLOSE_SQUARE;
 NT_OP_EXPR ::=
     // xxx <op> xxx
     NT_EXPRESSION:opLeft NT_BINARY_OP:midOp NT_EXPRESSION:opRight
@@ -548,7 +579,9 @@ NT_OP_EXPR ::=
     | NT_EXPRESSION:opLeft T_QUESTION:isElvis T_COLON NT_EXPRESSION:opRight;
 NT_FUNC_CALL_EXPR ::=
     // xxx(xxx, xxx, ...)
-    NT_EXPRESSION:self T_OPEN_PAREN NT_FUNC_PARAMETER_OPTLIST:parameter_inline T_CLOSE_PAREN;
+    NT_EXPRESSION:self T_OPEN_PAREN NT_EXPR_LIST:parameters T_CLOSE_PAREN
+    // xxx()
+    | NT_EXPRESSION:self T_OPEN_PAREN T_CLOSE_PAREN;
 NT_CLASS_ACCESS_EXPR ::=
     // xxx->xxx
     NT_EXPRESSION:self T_SINGLE_ARROW T_SIMPLE_NAME:field
@@ -557,12 +590,23 @@ NT_CLASS_ACCESS_EXPR ::=
 NT_CLASS_STATIC_ACCESS_EXPR ::=
     // self::$xxx
     T_SELF:isSelf T_SCOPE_RESOLUTION T_VAR_NAME:field
+    // self::xxx
+    | T_SELF:isSelf T_SCOPE_RESOLUTION T_SIMPLE_NAME:constName
     // static::$xxx
     | T_STATIC:isLateBinding T_SCOPE_RESOLUTION T_VAR_NAME:field
+    // static::xxx
+    | T_STATIC:isLateBinding T_SCOPE_RESOLUTION T_SIMPLE_NAME:constName
     // xxx::$xxx
     | NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_VAR_NAME:field
+    // xxx::xxx
+    | NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_SIMPLE_NAME:constName
     // $xxx::$xxx
-    | T_VAR_NAME:self T_SCOPE_RESOLUTION T_VAR_NAME:field;
+    | T_VAR_NAME:that T_SCOPE_RESOLUTION T_VAR_NAME:field
+    // $xxx::xxx
+    | T_VAR_NAME:that T_SCOPE_RESOLUTION T_SIMPLE_NAME:simpleName;
+NT_CLASS_PARENT_ACCESS_EXPR ::=
+    T_PARENT T_SCOPE_RESOLUTION T_VAR_NAME:varName
+    | T_PARENT T_SCOPE_RESOLUTION T_SIMPLE_NAME:simpleName;
 NT_TYPE ::=
     T_INT:isInt
     | T_FLOAT:isFloat
@@ -576,7 +620,47 @@ NT_TYPE ::=
     | NT_IDENTIFIER:identifier
     | T_MIXED:isMixed
     | T_ITERABLE:isIterable
-    | T_RESOURCE:isResource;
+    | T_RESOURCE:isResource
+    // ?xxx
+    | T_QUESTION:isNullable T_INT:isInt
+    | T_QUESTION:isNullable T_FLOAT:isFloat
+    | T_QUESTION:isNullable T_STRING:isString
+    | T_QUESTION:isNullable T_BOOL:isBool
+    | T_QUESTION:isNullable T_ARRAY:isArray
+    | T_QUESTION:isNullable T_OBJECT:isObject
+    | T_QUESTION:isNullable T_VOID:isVoid
+    | T_QUESTION:isNullable T_CALLABLE:isCallable
+    | T_QUESTION:isNullable T_NULL:isNull
+    | T_QUESTION:isNullable NT_IDENTIFIER:identifier
+    | T_QUESTION:isNullable T_MIXED:isMixed
+    | T_QUESTION:isNullable T_ITERABLE:isIterable
+    | T_QUESTION:isNullable T_RESOURCE:isResource;
+NT_CLASS_LITERAL ::= NT_IDENTIFIER:identifier T_SCOPE_RESOLUTION T_CLASS;
+
+NT_STRING_EXPR ::=
+    NT_COMMON_STR_EXPR:common
+    | NT_TEMPLATE_STR_EXPR:template;
+NT_COMMON_STR_EXPR ::=
+    T_SINGLE_QUOTE T_STR_VALUE:value T_SINGLE_QUOTE
+    | T_SINGLE_QUOTE T_SINGLE_QUOTE;
+NT_TEMPLATE_STR_EXPR ::=
+    T_DOUBLE_QUOTE NT_STRING_EXPR_LIST:list T_DOUBLE_QUOTE
+    | T_DOUBLE_QUOTE T_DOUBLE_QUOTE;
+
+NT_STRING_EXPR_LIST ::= NT_TEMPLATE_STR_ITEM:item | NT_STRING_EXPR_LIST NT_TEMPLATE_STR_ITEM:item;
+NT_TEMPLATE_STR_ITEM ::=
+    T_STR_PLACEHOLDER:placeholder T_OPEN_SQUARE T_INT_VALUE:indexInt T_CLOSE_SQUARE
+    | T_STR_PLACEHOLDER:placeholder T_OPEN_SQUARE T_STR_VALUE:indexStr T_CLOSE_SQUARE
+    | T_STR_PLACEHOLDER:placeholder
+    | T_STR_VALUE:value
+    | NT_STRING_INLINE_EXPR:inlineCode;
+NT_STRING_INLINE_EXPR ::=
+    T_OPEN_DOLLAR_CURLY NT_EXPRESSION:expr T_CLOSE_CURLY
+    | T_OPEN_CURLY NT_EXPRESSION:expr T_CLOSE_CURLY;
+
+NT_CMD_STRING_EXPR ::= T_BACK_QUOTE NT_STRING_EXPR_LIST:expr T_BACK_QUOTE;
+
+NT_INSTANCEOF_EXPR ::= NT_EXPRESSION:fromExpr T_INSTANCEOF NT_TYPE:type;
 
 // if else if 表达式
 NT_IF_STAT ::=
@@ -618,7 +702,9 @@ NT_VAR_INIT_OP ::=
     | T_BIT_AND_ASSIGN:isAndAssign
     | T_BIT_OR_ASSIGN:isOrAssign
     | T_LEFT_SHIFT_ASSIGN:isLsAssign
-    | T_RIGHT_SHIFT_ASSIGN:isRsAssign;
+    | T_RIGHT_SHIFT_ASSIGN:isRsAssign
+    | T_COALESCE_ASSIGN:isCoalesceAssign
+    | T_BIT_XOR_ASSIGN:isXorAssign;
 NT_VAR_INIT_SELF ::=
     T_VAR_NAME:varName
     | T_DOLLAR:isDollar T_VAR_NAME:varName
@@ -705,18 +791,18 @@ NT_DECLARE_PARAM ::=
     // xxx=<int>
     T_SIMPLE_NAME:key T_ASSIGN T_INT_VALUE:intValue
     // xxx=<string>
-    | T_SIMPLE_NAME:key T_ASSIGN T_STR_VALUE:stringValue;
+    | T_SIMPLE_NAME:key T_ASSIGN NT_STRING_EXPR:stringValue;
 NT_DECLARE_PARAM_LIST ::= NT_DECLARE_PARAM:item
     | NT_DECLARE_PARAM_LIST T_COMMA NT_DECLARE_PARAM:item;
 
 // return; | return xxx;
 NT_RETURN_STAT ::= T_RETURN T_SEMI | T_RETURN NT_EXPRESSION_STAT:statement;
 // require xxx; | require_once xxx;
-NT_REQUIRE_STAT ::= T_REQUIRE:isRequire T_STR_VALUE:file T_SEMI
-    | T_REQUIRE_ONCE:isRequireOnce T_STR_VALUE:file T_SEMI;
+NT_REQUIRE_STAT ::= T_REQUIRE:isRequire NT_STRING_EXPR:file T_SEMI
+    | T_REQUIRE_ONCE:isRequireOnce NT_STRING_EXPR:file T_SEMI;
 // include xxx; | include_once xxx;
-NT_INCLUDE_STAT ::= T_INCLUDE:isInclude T_STR_VALUE:file T_SEMI
-    | T_INCLUDE_ONCE:isIncludeOnce T_STR_VALUE:file T_SEMI;
+NT_INCLUDE_STAT ::= T_INCLUDE:isInclude NT_STRING_EXPR:file T_SEMI
+    | T_INCLUDE_ONCE:isIncludeOnce NT_STRING_EXPR:file T_SEMI;
 // goto xxx;
 NT_GOTO_STAT ::= T_GOTO T_SIMPLE_NAME:label T_SEMI;
 
@@ -728,7 +814,11 @@ NT_YIELD_FROM_STAT ::= T_YIELD_FROM NT_EXPRESSION_STAT:expr;
 
 NT_GLOBAL_STAT ::= T_GLOBAL NT_VAR_LIST:varList T_SEMI;
 NT_VAR_LIST ::= T_VAR_NAME:item | NT_VAR_LIST T_COMMA T_VAR_NAME:item;
-NT_STATIC_VAR_STAT ::= T_STATIC NT_ASSIGN_EXPR_LIST:varList T_SEMI;
+NT_STATIC_VAR_STAT ::= T_STATIC NT_STATIC_VAR_INIT_EXPR_LIST:varList T_SEMI;
+NT_STATIC_VAR_INIT_EXPR ::= T_VAR_NAME:varName | NT_ASSIGN_EXPR:withInit;
+NT_STATIC_VAR_INIT_EXPR_LIST ::=
+    NT_STATIC_VAR_INIT_EXPR:item
+    | NT_STATIC_VAR_INIT_EXPR_LIST T_COMMA NT_STATIC_VAR_INIT_EXPR:item;
 
 NT_TRY_CATCH_STAT ::=
     //  try catch finally
@@ -775,7 +865,6 @@ NT_ARRAY_CREATE_EXPR ::=
     | T_OPEN_SQUARE NT_EXPR_LIST:valueList T_CLOSE_SQUARE
     // []
     | T_OPEN_SQUARE T_CLOSE_SQUARE;
-NT_ARRAY_CREATE_INIT_EXPR ::=
-    NT_EXPRESSION:keyExpr T_DOUBLE_ARROW NT_EXPRESSION:valueExpr;
+NT_ARRAY_CREATE_INIT_EXPR ::= NT_EXPRESSION:keyExpr T_DOUBLE_ARROW NT_EXPRESSION:valueExpr;
 NT_ARRAY_CREATE_INIT_EXPR_LIST ::= NT_ARRAY_CREATE_INIT_EXPR:item
     | NT_ARRAY_CREATE_INIT_EXPR_LIST T_COMMA NT_ARRAY_CREATE_INIT_EXPR:item;

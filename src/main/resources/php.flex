@@ -28,11 +28,11 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
     private String docLabel = null;
 
     private Symbol symbol(int type) {
-        return new Symbol(type, yyline, -1);
+        return new Symbol(type, yyline + 1, -1);
     }
 
     private Symbol symbol(int type, Object value) {
-        return new Symbol(type, yyline, -1, value);
+        return new Symbol(type, yyline + 1, -1, value);
     }
 
     private static final String TEXT_ESCAPE_V = String.valueOf((char) 0x0b);
@@ -184,7 +184,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "." { return symbol(PhpSymbols.T_DOT); }
     "=>" { return symbol(PhpSymbols.T_DOUBLE_ARROW); }
     "->" { return symbol(PhpSymbols.T_SINGLE_ARROW); }
-    "..." { return symbol(PhpSymbols.T_ELLIPSIS); }
+//    "..." { return symbol(PhpSymbols.T_ELLIPSIS); }
     "::" { return symbol(PhpSymbols.T_SCOPE_RESOLUTION); }
     "+" { return symbol(PhpSymbols.T_PLUS); }
     "-" { return symbol(PhpSymbols.T_MINUS); }
@@ -378,9 +378,9 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "$"({LABEL})"[" {
         pushState(XS_INLINE_ARRAY_KEY);
         yypushback(1);
-        return symbol(PhpSymbols.T_VAR_NAME, yytext());
+        return symbol(PhpSymbols.T_STR_PLACEHOLDER, yytext());
     }
-    "$"({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext()); }
+    "$"({LABEL}) { return symbol(PhpSymbols.T_STR_PLACEHOLDER, yytext()); }
 }
 
 <XS_DOLLAR_INLINE_CODE> {

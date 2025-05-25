@@ -51,6 +51,7 @@ tasks.register<JavaExec>("generateCup") {
         "-symbols", "PhpSymbols",
         "-ast", "Node%s",
         "-ast_flatten", "list=_LIST&namelessInline=+_nl_inline&inline=+_inline",
+        "-compact_red",
         "src/main/resources/php.cup"
     )
 }
