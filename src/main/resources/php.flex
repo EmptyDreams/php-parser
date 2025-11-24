@@ -1,8 +1,10 @@
 package top.kmar.php;
 
-import java.io.Reader;import java.util.*;
+import java.io.Reader;
+import java.util.*;
 import java_cup.runtime.*;
-import java_cup.runtime.symbol.Location;import java_cup.runtime.symbol.complex.*;
+import java_cup.runtime.symbol.Location;
+import java_cup.runtime.symbol.complex.*;
 import top.kmar.php.exceptions.LexerException;
 
 %%
@@ -230,8 +232,6 @@ import top.kmar.php.exceptions.LexerException;
 %x XS_INLINE_CALL
 // 代码部分
 %x XS_CODE
-// 多行注释
-%x XS_COMMENT
 
 %cupdebug
 %unicode
@@ -513,7 +513,7 @@ DNUM = ([0-9]*"."[0-9]+)|([0-9]+"."[0-9]*)
     }
 }
 
-<XS_DQUOTE> {
+<XS_DQUOTE, XS_BQUOTE> {
     [\"] {
         popState();
         return symbol(PhpSymbols.T_DOUBLE_QUOTE);

@@ -1,0 +1,79 @@
+import org.xbib.gradle.plugin.jflex.JFlexTask
+
+plugins {
+    id 'java'
+    id 'org.xbib.gradle.plugin.jflex' version '3.0.2'
+}
+
+group = 'top.kmar.php'
+version = '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs(
+                layout.buildDirectory.dir('generated/main/jflex'),
+                layout.buildDirectory.dir('generated/main/cup')
+            )
+        }
+    }
+}
+
+dependencies {
+    implementation files('libs/runtime/java-cup-11b-runtime.jar')
+    compileOnly('de.jflex:jflex:1.9.1')
+
+    testImplementation 'junit:junit:4.13.2'
+}
+
+jflex {
+    encoding = 'UTF-8'
+}
+
+tasks.register('generateJFlex', JFlexTask) {
+    source = List.of(file('src/main/resources/php.flex'))
+    target = layout.buildDirectory.file('generated/main/jflex').get().asFile
+    
+    doLast {
+        def generatedFile = new File(target, 'top/kmar/php/PhpLexer.java')
+        if (generatedFile.exists()) {
+            def content = generatedFile.text
+            content = content.replace(
+                'new java_cup.runtime.Symbol(PhpSymbols.EOF);',
+                'factory.newSymbol(PhpSymbols.EOF, ComplexLocation.NO_LOCATION);'
+            )
+            generatedFile.text = content
+        }
+    }
+}
+
+tasks.register('generateCup', JavaExec) {
+    mainClass = 'java_cup.Main'
+    classpath = files('libs/compile/java-cup-11b.jar')
+    def outputFile = layout.buildDirectory.dir('generated/main/cup/top/kmar/php').get().asFile
+    outputFile.mkdirs()
+    args = [
+        '-destdir', outputFile.path,
+        '-package', 'top.kmar.php.parser',
+        '-parser', 'PhpParser',
+        '-symbols', 'PhpSymbols',
+        '-ast', 'Node%s',
+        '-compact_red',
+        '-nonterms',
+        'src/main/resources/php.cup'
+    ]
+}
+
+test {
+    useJUnitPlatform()
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
