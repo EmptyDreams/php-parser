@@ -37,6 +37,18 @@ jflex {
 tasks.register<JFlexTask>("generateJFlex") {
     source = listOf(file("src/main/resources/php.flex"))
     target = layout.buildDirectory.file("generated/main/jflex").get().asFile
+    
+    doLast {
+        val generatedFile = File(target, "top/kmar/php/PhpLexer.java")
+        if (generatedFile.exists()) {
+            var content = generatedFile.readText()
+            content = content.replace(
+                "new java_cup.runtime.Symbol(PhpSymbols.EOF);",
+                "factory.newSymbol(PhpSymbols.EOF, ComplexLocation.NO_LOCATION);"
+            )
+            generatedFile.writeText(content)
+        }
+    }
 }
 
 tasks.register<JavaExec>("generateCup") {
@@ -50,8 +62,8 @@ tasks.register<JavaExec>("generateCup") {
         "-parser", "PhpParser",
         "-symbols", "PhpSymbols",
         "-ast", "Node%s",
-        "-ast_flatten", "list=_LIST&namelessInline=+_nl_inline&inline=+_inline",
         "-compact_red",
+        "-nonterms",
         "src/main/resources/php.cup"
     )
 }

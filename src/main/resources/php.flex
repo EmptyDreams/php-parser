@@ -1,7 +1,9 @@
 package top.kmar.php;
 
-import java.util.*;
-import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
+import java.io.Reader;import java.util.*;
+import java_cup.runtime.*;
+import java_cup.runtime.symbol.Location;import java_cup.runtime.symbol.complex.*;
+import top.kmar.php.exceptions.LexerException;
 
 %%
 
@@ -10,14 +12,16 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
     private int[] stateStack = new int[16];
     private int topStateIndex = -1;
     private char[] charBuffer = null;
-    private int inlineCodeOpenCount = 0;
+
+    private SymbolFactory factory;
+
+    public PhpLexer(Reader reader, SymbolFactory factory) {
+        this(reader);
+        this.factory = factory;
+    }
 
     private void pushState(int newState) {
         stateStack[++topStateIndex] = yystate();
-        yybegin(newState);
-    }
-
-    private void replaceState(int newState) {
         yybegin(newState);
     }
 
@@ -25,14 +29,102 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
         yybegin(stateStack[topStateIndex--]);
     }
 
+    /* 字符串缓冲区 */
+
+    private StringBuilder stringBuffer = null;
+
+    private void pushStringBuffer() {
+        stringBuffer = new StringBuilder();
+    }
+
+    private String popStringBuffer() {
+        var text = stringBuffer.toString();
+        stringBuffer = null;
+        return text;
+    }
+
+    private void writeToBuffer(String text) {
+        stringBuffer.append(text);
+    }
+
+    private void writeToBuffer(char c) {
+        stringBuffer.append(c);
+    }
+
+    private void cpyTextToBuffer() {
+        stringBuffer.append(zzBuffer, zzStartRead, zzMarkedPos - zzStartRead);
+    }
+
+    /** DOC 存储 */
     private String docLabel = null;
 
+    /* 坐标缓冲区 */
+
+    private final int[] posBuffer = new int[2];
+
+    private void pushPos() {
+        posBuffer[0] = yyline + 1;
+        posBuffer[1] = yycolumn + 1;
+    }
+
+    private Location popPos() {
+        int startLine = posBuffer[0];
+        int startColumn = posBuffer[1];
+        int endLine = yyline + 1;
+        int endColumn = yycolumn + 1 + yylength();
+        return ComplexLocation.of(startLine, startColumn, endLine, endColumn);
+    }
+
     private Symbol symbol(int type) {
-        return new Symbol(type, yyline + 1, -1);
+        return factory.newSymbol(type, location());
     }
 
     private Symbol symbol(int type, Object value) {
-        return new Symbol(type, yyline + 1, -1, value);
+        return factory.newSymbol(type, location(), value);
+    }
+
+    private Symbol symbol(int type, Location location, Object value) {
+        return factory.newSymbol(type, location, value);
+    }
+
+    private Symbol symbol(int type, long value) {
+        return factory.newSymbol(type, location(), value);
+    }
+
+    private Symbol symbol(int type, double value) {
+        return factory.newSymbol(type, location(), value);
+    }
+
+    private Symbol symbol(int type, boolean value) {
+        return factory.newSymbol(type, location(), value);
+    }
+
+    private ComplexLocation location() {
+        var line = yyline + 1;
+        var startColumn = yycolumn + 1;
+        return ComplexLocation.of(
+            line,
+            startColumn,
+            line,
+            startColumn + yylength()
+        );
+    }
+
+    private Location locationOffsetWith(String text) {
+        int startLine = yyline + 1;
+        int startColumn = yycolumn + 1;
+        int endLine = yyline + 1;
+        int endColumn = startColumn;
+        for (int i = 0; i != text.length(); ++i) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                ++endLine;
+                endColumn = 0;
+            } else {
+                ++endColumn;
+            }
+        }
+        return ComplexLocation.of(startLine, startColumn, endLine, endColumn);
     }
 
     private static final String TEXT_ESCAPE_V = String.valueOf((char) 0x0b);
@@ -54,11 +146,24 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
         return new String(buffer, 0, length);
     }
 
-    /** 提取当前匹配的字符串，允许调整左右边界，为正向右偏移 */
+    private String yytext(int startOffset) {
+        int startIndex = zzStartRead + startOffset;
+        return String.valueOf(zzBuffer, startIndex, zzMarkedPos - startIndex);
+    }
+
     private String yytext(int startOffset, int endOffset) {
         int startIndex = zzStartRead + startOffset;
-        int endIndexExclude = zzMarkedPos + endOffset;
-        return new String(zzBuffer, startIndex, endIndexExclude - startIndex);
+        return String.valueOf(zzBuffer, startIndex, zzMarkedPos - startIndex + endOffset);
+    }
+
+    private boolean yyStartsWith(String prefix, int startOffset) {
+        int length = prefix.length();
+        if (zzMarkedPos - zzStartRead < length) return false;
+        int startIndex = zzStartRead + startOffset;
+        for (int i = 0; i != length; ++i) {
+            if (prefix.charAt(i) != zzBuffer[startIndex + i]) return false;
+        }
+        return true;
     }
 
     /** 处理 `\[0-7]{1, 3}` 形式的八进制转义 */
@@ -69,7 +174,7 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
             value = value << 3 | (yycharat(i) - '0');
         }
         if (value > 0xFF) throw new LexerException(yyline, yycolumn, "Octal escape sequence is out of range");
-        return symbol(PhpSymbols.T_STR_VALUE, String.valueOf((char) value));
+        return symbol(PhpSymbols.T_STRING_VALUE, String.valueOf((char) value));
     }
 
     /** 处理 `\x[0-9a-fA-F]{1, 2}` 形式的十六进制转义 */
@@ -86,14 +191,12 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
                 value = value << 4 | (c - 'A' + 10);
             }
         }
-        return symbol(PhpSymbols.T_STR_VALUE, String.valueOf((char) value));
+        return symbol(PhpSymbols.T_STRING_VALUE, String.valueOf((char) value));
     }
 
     /** 处理 `\\u\{[0-9a-fA-F]+\}` 形式的十六进制转义 */
     private Symbol parseTextEscapeUnicode() {
         int length = yylength() - 1;
-        System.out.println();
-        System.out.println(yycharat(length));
         if (length < 3 || yycharat(length) != '}') throw new LexerException(yyline, yycolumn, "Invalid Unicode escape sequence");
         if (length > 8) throw new LexerException(yyline, yycolumn, "Unicode escape sequence is out of range");
         int value = 0;
@@ -107,7 +210,7 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
                 value = value << 4 | (c - 'A' + 10);
             }
         }
-        return symbol(PhpSymbols.T_STR_VALUE, String.valueOf((char) value));
+        return symbol(PhpSymbols.T_STRING_VALUE, String.valueOf((char) value));
     }
 
 %}
@@ -124,6 +227,7 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
 %x XS_INLINE_CODE
 %x XS_DOLLAR_INLINE_CODE
 %x XS_INLINE_ARRAY_KEY
+%x XS_INLINE_CALL
 // 代码部分
 %x XS_CODE
 // 多行注释
@@ -140,54 +244,54 @@ import java_cup.runtime.*;import top.kmar.php.exceptions.LexerException;
 
 // 标识符
 LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
+// 浮点数
+DNUM = ([0-9]*"."[0-9]+)|([0-9]+"."[0-9]*)
 
 %%
 
-<YYINITIAL, XS_CODE, XS_DOLLAR_INLINE_CODE> {
-    [ \t\r\n]+ { }
+<YYINITIAL, XS_CODE> {
+    [ \t\n]+ { }
 }
 
 <YYINITIAL> {
     "<?php" {
         pushState(XS_CODE);
-        return symbol(PhpSymbols.T_CODE_BLOCK, "S");
+        return symbol(PhpSymbols.T_CODE_BLOCK);
     }
 }
 
-<XS_CODE, XS_INLINE_CODE> {
+<XS_CODE> {
     [\"] {
         pushState(XS_DQUOTE);
-        return symbol(PhpSymbols.T_DOUBLE_QUOTE, "S");
+        return symbol(PhpSymbols.T_DOUBLE_QUOTE);
     }
     ['] {
         pushState(XS_SQUOTE);
-        return symbol(PhpSymbols.T_SINGLE_QUOTE, "S");
+        pushPos();
+        pushStringBuffer();
     }
     [`] {
         pushState(XS_BQUOTE);
-        return symbol(PhpSymbols.T_BACK_QUOTE, "S");
+        return symbol(PhpSymbols.T_BACK_QUOTE);
     }
 
-    (#|\/\/)[^\r\n]* { return symbol(PhpSymbols.T_LINE_COMMENT, yytext()); }
-    "/*" {
-        pushState(XS_COMMENT);
-        return symbol(PhpSymbols.T_OPEN_BLOCK_COMMENT);
-    }
+    (#|\/\/)[^\n]* { /* return symbol(PhpSymbols.T_LINE_COMMENT, yytext()); */ }
+    "/*" [^*]* "*"+ ([^*/] [^*]* "*"+)* "/" { }
 
     "(" { return symbol(PhpSymbols.T_OPEN_PAREN); }
     ")" { return symbol(PhpSymbols.T_CLOSE_PAREN); }
     "[" { return symbol(PhpSymbols.T_OPEN_SQUARE); }
     "]" { return symbol(PhpSymbols.T_CLOSE_SQUARE); }
+    "{" { return symbol(PhpSymbols.T_OPEN_CURLY); }
+    "}" { return symbol(PhpSymbols.T_CLOSE_CURLY); }
 
     ";" { return symbol(PhpSymbols.T_SEMI); }
     "," { return symbol(PhpSymbols.T_COMMA); }
     "." { return symbol(PhpSymbols.T_DOT); }
     "=>" { return symbol(PhpSymbols.T_DOUBLE_ARROW); }
     "->" { return symbol(PhpSymbols.T_SINGLE_ARROW); }
-//    "..." { return symbol(PhpSymbols.T_ELLIPSIS); }
+    "..." { return symbol(PhpSymbols.T_ELLIPSIS); }
     "::" { return symbol(PhpSymbols.T_SCOPE_RESOLUTION); }
-    "+" { return symbol(PhpSymbols.T_PLUS); }
-    "-" { return symbol(PhpSymbols.T_MINUS); }
     "*" { return symbol(PhpSymbols.T_MUL); }
     "/" { return symbol(PhpSymbols.T_DIV); }
     "%" { return symbol(PhpSymbols.T_MOD); }
@@ -240,7 +344,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "return" { return symbol(PhpSymbols.T_RETURN); }
     "throw" { return symbol(PhpSymbols.T_THROW); }
     "if" { return symbol(PhpSymbols.T_IF); }
-    else[ \t\r\n]*if { return symbol(PhpSymbols.T_ELSEIF); }
+    else[ \t\n]*if { return symbol(PhpSymbols.T_ELSEIF); }
     "else" { return symbol(PhpSymbols.T_ELSE); }
     "for" { return symbol(PhpSymbols.T_FOR); }
     "foreach" { return symbol(PhpSymbols.T_FOREACH); }
@@ -289,7 +393,7 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "resource" { return symbol(PhpSymbols.T_RESOURCE); }
     "void" { return symbol(PhpSymbols.T_VOID); }
     "yield" { return symbol(PhpSymbols.T_YIELD); }
-    yield[ \t\r\n]from { return symbol(PhpSymbols.T_YIELD_FROM); }
+    yield[ \t\n]from { return symbol(PhpSymbols.T_YIELD_FROM); }
     "var" { return symbol(PhpSymbols.T_VAR); }
     "global" { return symbol(PhpSymbols.T_GLOBAL); }
     "list" { return symbol(PhpSymbols.T_LIST); }
@@ -305,64 +409,130 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "self" { return symbol(PhpSymbols.T_SELF); }
     "parent" { return symbol(PhpSymbols.T_PARENT); }
 
-    \$({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext()); }
-    ({LABEL}) { return symbol(PhpSymbols.T_SIMPLE_NAME, yytext()); }
+
+    "<<<'"({LABEL})"'"\n {
+        var len = yylength();
+        docLabel = yytext(4, -2);
+        pushState(XS_NEW_DOC);
+        pushStringBuffer();
+        pushPos();
+    }
+    "<<<"({LABEL})\n {
+        var len = yylength();
+        docLabel = yytext(3, -1);
+        pushState(XS_HEAR_DOC);
+        return symbol(PhpSymbols.T_HEREDOC_START);
+    }
+
+    \$({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext(1)); }
+    ({LABEL}) { return symbol(PhpSymbols.T_NAME, yytext()); }
     (\\{LABEL}\\?)|(\\{LABEL})+\\?|(({LABEL}\\)+{LABEL}\\?)|({LABEL}\\) {
         return symbol(PhpSymbols.T_QUALIFIED_NAME, yytext());
     }
-    [+-]?(([0-9]+(_[0-9]+)*)|(0b[01]+(_[01]+)*)|(0x[0-9a-fA-F]+(_[0-9a-fA-F])*)) {
-        return symbol(PhpSymbols.T_INT_VALUE, yytext());
-    }
-    [+-]?([0-9]+\.[0-9]*|\.[0-9]+) { return symbol(PhpSymbols.T_FLOAT_VALUE, yytext()); }
-    [+-]?[0-9]+e[+-]?[0-9]+ { return symbol(PhpSymbols.T_FLOAT_E_VALUE, yytext()); }
+
+    [^] { throw new RuntimeException(yytext()); }
 }
 
-<XS_CODE> {
-    "{" { return symbol(PhpSymbols.T_OPEN_CURLY); }
-    "}" { return symbol(PhpSymbols.T_CLOSE_CURLY); }
-}
+<XS_CODE, XS_INLINE_CODE, XS_DOLLAR_INLINE_CODE> {
+    "+" { return symbol(PhpSymbols.T_PLUS); }
+    "-" { return symbol(PhpSymbols.T_MINUS); }
 
-<XS_INLINE_CODE> {
-    "{" {
-        ++inlineCodeOpenCount;
-        return symbol(PhpSymbols.T_OPEN_CURLY);
+    // 十六进制整数
+    0[xX][0-9a-fA-F]+     {
+        return symbol(PhpSymbols.T_INT_VALUE, Long.parseLong(yytext(2), 16));
     }
-    "}" {
-        if (--inlineCodeOpenCount == 0) popState();
-        return symbol(PhpSymbols.T_CLOSE_CURLY);
+    // 二进制整数
+    0[bB][01]+            {
+        return symbol(PhpSymbols.T_INT_VALUE, Long.parseLong(yytext(2), 2));
+    }
+    // 八进制整数
+    0[oO]?[0-7]+          {
+        char sec = yycharat(1);
+        int offset = sec == 'o' || sec == 'O' ? 2 : 1;
+        return symbol(PhpSymbols.T_INT_VALUE, Long.parseLong(yytext(offset), 8));
+    }
+    // 十进制整数
+    [1-9][0-9]*|0         {
+        return symbol(PhpSymbols.T_INT_VALUE, Long.parseLong(yytext()));
+    }
+
+    // 浮点数
+    ({DNUM})|(({DNUM}|[0-9]+)[eE][+-]?[0-9]+)  {
+        return symbol(PhpSymbols.T_FLOAT_VALUE, Double.parseDouble(yytext()));
     }
 }
 
 <XS_SQUOTE> {
     ['] {
         popState();
-        return symbol(PhpSymbols.T_SINGLE_QUOTE, "E");
+        return factory.newSymbol(PhpSymbols.T_SINGLE_STRING, popPos(), popStringBuffer());
     }
-    (\\') { return symbol(PhpSymbols.T_STR_VALUE, "\\'"); }
-    \\\\ { return symbol(PhpSymbols.T_STR_VALUE, "\\\\"); }
-    ([^'\\]|\\[^'])+ { return symbol(PhpSymbols.T_STR_VALUE, yytext()); }
+    \\' {
+        writeToBuffer('\'');
+    }
+    \\\\ {
+        writeToBuffer('\\');
+    }
+    [^\\']+ {
+        cpyTextToBuffer();
+    }
+
+}
+
+<XS_NEW_DOC> {
+    \n?[^\n]+ {
+        char first = yycharat(0);
+        int offset = first == '\n' ? 1 : 0;
+        var len = yylength();
+        var labelLen = docLabel.length();
+        switch (len - labelLen - offset) {
+            case 0:
+                if (yyStartsWith(docLabel, offset)) {
+                    popState();
+                    return symbol(PhpSymbols.T_NEWDOC, popPos(), popStringBuffer());
+                } else {
+                    cpyTextToBuffer();
+                }
+                break;
+            case 1:
+                if (yyStartsWith(docLabel, offset) && yycharat(labelLen + offset) == ';') {
+                    yypushback(1);
+                    popState();
+                    return symbol(PhpSymbols.T_NEWDOC, popPos(), popStringBuffer());
+                } else {
+                    cpyTextToBuffer();
+                }
+                break;
+            default:
+                cpyTextToBuffer();
+                break;
+        }
+    }
+    \n {
+        writeToBuffer('\n');
+    }
 }
 
 <XS_DQUOTE> {
     [\"] {
         popState();
-        return symbol(PhpSymbols.T_DOUBLE_QUOTE, "E");
+        return symbol(PhpSymbols.T_DOUBLE_QUOTE);
     }
-    ([^\\\"\$]|\\[^nrtvef\\$\"0-7xu]|\\x[^0-9a-fA-F]|\\u[^{]|\{[^$]|\$[^a-zA-Z_\x80-\xFF{])+ {
-        return symbol(PhpSymbols.T_STR_VALUE, yytext());
+    ([^\\\"\$\{]|\\[^nrtvef\\$\"0-7xu]|\\x[^0-9a-fA-F]|\\u[^{]|\{[^$]|\$[^a-zA-Z_\x80-\xFF{])+ {
+        return symbol(PhpSymbols.T_STRING_VALUE, yytext());
     }
 }
 
 <XS_DQUOTE, XS_HEAR_DOC, XS_BQUOTE> {
-    \\n { return symbol(PhpSymbols.T_STR_VALUE, "\n"); }
-    \\r { return symbol(PhpSymbols.T_STR_VALUE, "\r"); }
-    \\t { return symbol(PhpSymbols.T_STR_VALUE, "\t"); }
-    \\v { return symbol(PhpSymbols.T_STR_VALUE, TEXT_ESCAPE_V); }
-    \\e { return symbol(PhpSymbols.T_STR_VALUE, TEXT_ESCAPE_E); }
-    \\f { return symbol(PhpSymbols.T_STR_VALUE, TEXT_ESCAPE_F); }
-    \\\\ { return symbol(PhpSymbols.T_STR_VALUE, "\\\\"); }
-    \\$ { return symbol(PhpSymbols.T_STR_VALUE, "$"); }
-    \\\" { return symbol(PhpSymbols.T_STR_VALUE, "\""); }
+    \\n { return symbol(PhpSymbols.T_STRING_VALUE, "\n"); }
+    \\r { return symbol(PhpSymbols.T_STRING_VALUE, "\r"); }
+    \\t { return symbol(PhpSymbols.T_STRING_VALUE, "\t"); }
+    \\v { return symbol(PhpSymbols.T_STRING_VALUE, TEXT_ESCAPE_V); }
+    \\e { return symbol(PhpSymbols.T_STRING_VALUE, TEXT_ESCAPE_E); }
+    \\f { return symbol(PhpSymbols.T_STRING_VALUE, TEXT_ESCAPE_F); }
+    \\\\ { return symbol(PhpSymbols.T_STRING_VALUE, "\\\\"); }
+    \\$ { return symbol(PhpSymbols.T_STRING_VALUE, "$"); }
+    \\\" { return symbol(PhpSymbols.T_STRING_VALUE, "\""); }
     \\[0-7]{1, 3} { return parseTextEscapeOct(); }
     \\x[0-9a-fA-F]{1, 2} { return parseTextEscapeHex(); }
     \\u\{[^}]*\}? { return parseTextEscapeUnicode(); }
@@ -378,55 +548,107 @@ LABEL = [a-zA-Z_\x80-\xFF][a-zA-Z0-9_\x80-\xFF]*
     "$"({LABEL})"[" {
         pushState(XS_INLINE_ARRAY_KEY);
         yypushback(1);
-        return symbol(PhpSymbols.T_STR_PLACEHOLDER, yytext());
+        return symbol(PhpSymbols.T_VAR_NAME, yytext(1));
     }
-    "$"({LABEL}) { return symbol(PhpSymbols.T_STR_PLACEHOLDER, yytext()); }
+    "$"({LABEL})"->" {
+        pushState(XS_INLINE_CALL);
+        yypushback(2);
+        return symbol(PhpSymbols.T_VAR_NAME, yytext(1));
+    }
+    "$"({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext(1)); }
 }
 
-<XS_DOLLAR_INLINE_CODE> {
+<XS_HEAR_DOC> {
+    \n?([^\\\"\$\n\{]|\\[^nrtvef\\$\"0-7xu]|\\x[^0-9a-fA-F]|\\u[^{]|\{[^$]|\$[^a-zA-Z_\x80-\xFF{])+ {
+        char first = yycharat(0);
+        int offset = first == '\n' ? 1 : 0;
+        var len = yylength();
+        var labelLen = docLabel.length();
+        switch (len - labelLen - offset) {
+            case 0: {
+                if (yyStartsWith(docLabel, offset)) {
+                    return symbol(PhpSymbols.T_HEREDOC_END);
+                } else {
+                    return symbol(PhpSymbols.T_STRING_VALUE, yytext());
+                }
+            }
+            case 1:
+                if (yyStartsWith(docLabel, offset) && yycharat(labelLen + offset) == ';') {
+                    yypushback(1);
+                    popState();
+                    return symbol(PhpSymbols.T_HEREDOC_END);
+                } else {
+                    return symbol(PhpSymbols.T_STRING_VALUE, yytext());
+                }
+            default:
+                return symbol(PhpSymbols.T_STRING_VALUE, yytext());
+        }
+    }
+    \n {
+        return symbol(PhpSymbols.T_STRING_VALUE, "\n");
+    }
+}
+
+<XS_INLINE_CODE> {
+    \$({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext(1)); }
+}
+
+<XS_DOLLAR_INLINE_CODE, XS_INLINE_CODE> {
+    ({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext()); }
     "}" {
         popState();
         return symbol(PhpSymbols.T_CLOSE_CURLY);
     }
-    ({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytextPrefixWith('$')); }
     "[" { return symbol(PhpSymbols.T_OPEN_SQUARE); }
     "]" { return symbol(PhpSymbols.T_CLOSE_SQUARE); }
-    [+-]?(([0-9]+(_[0-9]+)*)|(0b[01]+(_[01]+)*)|(0x[0-9a-fA-F]+(_[0-9a-fA-F])*)) {
-        return symbol(PhpSymbols.T_INT_VALUE, yytext());
-    }
-    \$({LABEL}) { return symbol(PhpSymbols.T_VAR_NAME, yytext()); }
+    \$ { return symbol(PhpSymbols.T_DOLLAR); }
     "'" {
         pushState(XS_SQUOTE);
-        return symbol(PhpSymbols.T_SINGLE_QUOTE, "S");
+        pushStringBuffer();
+        pushPos();
     }
     "\"" {
         pushState(XS_DQUOTE);
-        return symbol(PhpSymbols.T_DOUBLE_QUOTE, "S");
+        return symbol(PhpSymbols.T_DOUBLE_QUOTE);
     }
     "`" {
         pushState(XS_BQUOTE);
-        return symbol(PhpSymbols.T_BACK_QUOTE, "S");
+        return symbol(PhpSymbols.T_BACK_QUOTE);
     }
+    "->" { return symbol(PhpSymbols.T_SINGLE_ARROW); }
+    [^] { throw new LexerException(yyline + 1, yycolumn + 1, "Unexpected character '" + yycharat(0) + "'"); }
 }
 
 <XS_INLINE_ARRAY_KEY> {
     "[" { return symbol(PhpSymbols.T_OPEN_SQUARE); }
     "]" {
         popState();
+        return symbol(PhpSymbols.T_CLOSE_SQUARE);
     }
-    -?0 { return symbol(PhpSymbols.T_INT_VALUE, "0"); }
-    -?[1-9][0-9]* { return symbol(PhpSymbols.T_INT_VALUE, yytext()); }
-    ({LABEL}) { return symbol(PhpSymbols.T_STR_VALUE, yytext()); }
+    "0" { return symbol(PhpSymbols.T_INT_VALUE, 0); }
+    -?[1-9][0-9]* { return symbol(PhpSymbols.T_INT_VALUE, Long.parseLong(yytext())); }
+    ({LABEL}|-?0(a-zA-Z0-9_\x80-\xFF)*) { return symbol(PhpSymbols.T_STRING_VALUE, yytext()); }
+    [^] { throw new LexerException(yyline + 1, yycolumn + 1, "Unexpected character '" + yycharat(0) + "'"); }
 }
 
-<XS_COMMENT> {
-    "*/" {
+<XS_INLINE_CALL> {
+    "->" {
+        return symbol(PhpSymbols.T_SINGLE_ARROW);
+    }
+    ({LABEL}) {
         popState();
-        return symbol(PhpSymbols.T_CLOSE_BLOCK_COMMENT);
+        return symbol(PhpSymbols.T_NAME, yytext());
     }
-    ([^*]|\*[^/])+ { return symbol(PhpSymbols.T_BLOCK_COMMENT_CONTENT, yytext()); }
+    [^] { throw new LexerException(yyline + 1, yycolumn + 1, "Unexpected character '" + yycharat(0) + "'"); }
 }
 
-<XS_SQUOTE, XS_DQUOTE, XS_BQUOTE><<EOF>> {
-    throw new LexerException(yyline, yycolumn, "Unexpected EOF");
+<YYINITIAL> {
+    [^] { throw new LexerException(yyline + 1, yycolumn + 1, "Unexpected character '" + yycharat(0) + "'"); }
+}
+
+<<EOF>> {
+    if (topStateIndex < 1) {
+        return symbol(PhpSymbols.EOF);
+    }
+    throw new LexerException(yyline + 1, yycolumn + 1, "Unexpected end of file in state[" + yystate() + ']');
 }
