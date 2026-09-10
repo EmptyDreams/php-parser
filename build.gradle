@@ -1,10 +1,14 @@
 plugins {
     id 'java'
-    id 'org.xbib.gradle.plugin.jflex' version '3.0.2'
 }
 
 group = 'top.kmar.php'
 version = '1.0-SNAPSHOT'
+
+configurations {
+    jflex
+    cup
+}
 
 repositories {
     mavenCentral()
@@ -22,13 +26,77 @@ sourceSets {
 }
 
 dependencies {
-    compileOnly('de.jflex:jflex:1.9.1')
+    // 词法分析器生成器（仅在生成任务中使用）
+    jflex 'de.jflex:jflex:1.9.1'
+    // CUP 解析器生成器（仅在生成任务中使用）
+    cup 'top.kmar.cup:java-cup:1.0.0'
+    // 生成的解析器运行时依赖
+    implementation 'top.kmar.cup:java-cup-runtime:1.0.0'
 
     testImplementation 'junit:junit:4.13.2'
 }
 
-jflex {
-    encoding = 'UTF-8'
+def cupSource = layout.projectDirectory.file('src/main/cup/php.cup')
+def flexSource = layout.projectDirectory.file('src/main/jflex/php.flex')
+def jflexOutputDir = layout.buildDirectory.dir('generated/main/jflex/top/kmar/php')
+def cupParserClass = 'PhpParser'
+def cupSymbolsClass = 'PhpSymbols'
+
+// jflex 生成的代码基于原版 CUP 运行时，与本项目使用的 fork（top.kmar.cup）不兼容，
+// 生成后需要做的文本替换都集中在这里维护。
+// 使用完全限定名（与 jflex 骨架风格一致），不依赖 flex 文件里的 import
+def jflexPostFixes = [
+        // fork 的 Symbol 是抽象类且构造器需要 Location；与 lr_parser.scan() 构造
+        // EOF 符号的方式保持一致：
+        // getSymbolFactory().newSymbol(EOF_sym(), Location.NO_LOCATION)
+        'new java_cup.runtime.Symbol(sym.EOF)':
+                "new java_cup.runtime.symbol.complex.ComplexEmptySymbol(" +
+                        "${cupSymbolsClass}.EOF, java_cup.runtime.symbol.Location.NO_LOCATION)"
+]
+
+// jflex 的 -d 与 CUP 的 -destdir 都不会自动拼接包路径，需要写全
+tasks.register('generateJFlexLexer', JavaExec) {
+    mainClass = 'jflex.Main'
+    classpath = configurations.jflex
+    args = [
+            '-d', jflexOutputDir.get().asFile,
+            '--encoding', 'UTF-8',
+            '--nobak',
+            flexSource
+    ]
+    workingDir = project.projectDir
+    // 语法文件不存在时跳过，避免项目初始阶段构建失败
+    onlyIf { flexSource.asFile.exists() }
+    inputs.file(flexSource)
+    outputs.dir(jflexOutputDir)
+    doLast {
+        jflexOutputDir.get().asFile.eachFileRecurse { f ->
+            if (!f.name.endsWith('.java')) return
+            def text = f.getText('UTF-8')
+            def patched = text
+            jflexPostFixes.each { from, to -> patched = patched.replace(from, to) }
+            if (patched != text) {
+                f.write(patched, 'UTF-8')
+                logger.lifecycle("已修补 jflex 生成代码: {}", f)
+            }
+        }
+    }
+}
+
+tasks.register('generateCupParser', JavaExec) {
+    mainClass = 'java_cup.Main'
+    classpath = configurations.cup
+    args = [
+            '-parser', cupParserClass,
+            '-symbols', cupSymbolsClass,
+            '-interface',
+            '-destdir', layout.buildDirectory.dir('generated/main/cup/top/kmar/php').get().asFile,
+            cupSource
+    ]
+    workingDir = project.projectDir
+    onlyIf { cupSource.asFile.exists() }
+    inputs.file(cupSource)
+    outputs.dir(layout.buildDirectory.dir('generated/main/cup/top/kmar/php'))
 }
 
 test {
