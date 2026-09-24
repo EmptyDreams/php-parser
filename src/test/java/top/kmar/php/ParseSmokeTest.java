@@ -17,27 +17,31 @@ class ParseSmokeTest {
         return Main.parse(php);
     }
 
+    // 验证源文件必须以 PHP 开始标签开头，且不能重复开启 PHP 模式。
     @Test
-    void 文件必须以Php标签开头() {
+    void requiresPhpOpeningTag() {
         assertThrows(PhpLexerException.class, () -> parse("echo 1;"));
         assertThrows(Exception.class, () -> parse("<?php echo 1; <?php echo 2;"));
     }
 
+    // 验证仅包含 PHP 开始标签和空白的程序可以解析。
     @Test
-    void 空文件与空标签() {
+    void parsesEmptyPhpPrograms() {
         assertDoesNotThrow(() -> parse("<?php\n"));
         assertDoesNotThrow(() -> parse("<?php "));
     }
 
+    // 验证 PHP 关闭标签可以充当隐式分号。
     @Test
-    void 问答标签作为隐式分号() {
+    void treatsClosingTagAsImplicitSemicolon() {
         // "?>" 等价于 ";"，之后的 HTML 被丢弃，允许再次进入 PHP 模式
         assertDoesNotThrow(() -> parse("<?php if (true) { ?>html<?php } echo 1; ?>"));
         assertDoesNotThrow(() -> parse("<?php $a = 1 ?><?php echo $a;"));
     }
 
+    // 验证混合运算符、括号和不同优先级的表达式可以解析。
     @Test
-    void 表达式与运算符优先级() {
+    void parsesExpressionsWithMixedOperatorPrecedence() {
         assertDoesNotThrow(() -> parse("<?php $r = 1 + 2 * 3 ** 2 << 1 | 4 & 5 ^ 6;"));
         assertDoesNotThrow(() -> parse("<?php $a = $x ?? $y ?? 'default';"));
         assertDoesNotThrow(() -> parse("<?php $b = -$c + !$d . ~$e;"));
@@ -49,13 +53,15 @@ class ParseSmokeTest {
         assertDoesNotThrow(() -> parse("<?php $o = $arr['k']{0} . $arr[0];"));
     }
 
+    // 验证带括号的嵌套三元表达式可以解析。
     @Test
-    void 三元与短三元() {
+    void parsesNestedTernaryExpressions() {
         assertDoesNotThrow(() -> parse("<?php $a = $b ? $c : ($d ? $e : $f);"));
     }
 
+    // 验证动态变量、成员访问、解构和引用等变量语法可以解析。
     @Test
-    void 变量语法的各种形态() {
+    void parsesVariableSyntaxForms() {
         assertDoesNotThrow(() -> parse("<?php $a = $$b;"));
         assertDoesNotThrow(() -> parse("<?php $a = ${$b};"));
         assertDoesNotThrow(() -> parse("<?php $a = $obj->prop->chain->method()->field[0];"));
@@ -69,8 +75,9 @@ class ParseSmokeTest {
         assertDoesNotThrow(() -> parse("<?php $e = &$f;"));
     }
 
+    // 验证条件、循环、分支和跳转等控制流语句可以解析。
     @Test
-    void 控制流() {
+    void parsesControlFlowStatements() {
         assertDoesNotThrow(() -> parse(
                 "<?php if ($a) { 1; } elseif ($b) { 2; } else if ($c) { 3; } else { 4; }"));
         assertDoesNotThrow(() -> parse(
@@ -94,8 +101,9 @@ class ParseSmokeTest {
                 "<?php goto end; end: echo 1;"));
     }
 
+    // 验证函数、闭包以及参数和返回值类型声明可以解析。
     @Test
-    void 函数与类型() {
+    void parsesFunctionsAndTypeDeclarations() {
         assertDoesNotThrow(() -> parse(
                 "<?php function f(int $a, string $b = 'x', ?Foo ...$rest): ?int { return $a; }"));
         assertDoesNotThrow(() -> parse(
@@ -110,8 +118,9 @@ class ParseSmokeTest {
                 "<?php function withRef(&$param) {}"));
     }
 
+    // 验证类、接口、Trait 和匿名类声明可以解析。
     @Test
-    void 类接口与Trait() {
+    void parsesClassesInterfacesAndTraits() {
         assertDoesNotThrow(() -> parse("<?php class A {}"));
         assertDoesNotThrow(() -> parse(
                 "<?php abstract class A extends B implements C, D {"
@@ -145,8 +154,9 @@ class ParseSmokeTest {
                 + " };"));
     }
 
+    // 验证命名空间声明和各类 use 导入语句可以解析。
     @Test
-    void 命名空间与use() {
+    void parsesNamespacesAndUseDeclarations() {
         assertDoesNotThrow(() -> parse("<?php namespace A\\B\\C;"));
         assertDoesNotThrow(() -> parse("<?php namespace A\\B { function f() {} }"));
         assertDoesNotThrow(() -> parse("<?php namespace { function g() {} }"));
@@ -160,8 +170,9 @@ class ParseSmokeTest {
                 "<?php use \\A, \\B\\C;"));
     }
 
+    // 验证数组、解构以及不同格式的数值字面量可以解析。
     @Test
-    void 数据结构与字面量() {
+    void parsesDataStructuresAndLiterals() {
         assertDoesNotThrow(() -> parse("<?php $a = []; $b = array();"));
         assertDoesNotThrow(() -> parse(
                 "<?php $a = [1, 2, , 4,]; $b = array('k' => 'v', 'w' => &$ref);"));
@@ -175,8 +186,9 @@ class ParseSmokeTest {
                 "<?php $f1 = 1.5; $f2 = .5; $f3 = 1.; $f4 = 1e10; $f5 = 1.5e-3;"));
     }
 
+    // 验证字符串转义、变量插值和反引号表达式可以解析。
     @Test
-    void 字符串与插值() {
+    void parsesStringsAndInterpolation() {
         assertDoesNotThrow(() -> parse("<?php $a = 'plain'; $b = 'esc \\' quote'; $c = 'multi\\nline';"));
         assertDoesNotThrow(() -> parse("<?php $d = \"no interp\";"));
         assertDoesNotThrow(() -> parse("<?php $e = \"with $var here\";"));
@@ -188,8 +200,9 @@ class ParseSmokeTest {
         assertDoesNotThrow(() -> parse("<?php $o = \"nested {$a['x']} {$$b}\";"));
     }
 
+    // 验证 heredoc 和 nowdoc 的内容、插值及结束标签可以解析。
     @Test
-    void heredoc与nowdoc() {
+    void parsesHeredocAndNowdoc() {
         assertDoesNotThrow(() -> parse("<?php $a = <<<EOT\nplain text\nEOT;\n"));
         assertDoesNotThrow(() -> parse("<?php $b = <<<'NOW'\nno $interp\nNOW;\n"));
         assertDoesNotThrow(() -> parse("<?php $c = <<<EOT\nwith $var and {$e['k']}\nEOT;\n"));
@@ -200,15 +213,17 @@ class ParseSmokeTest {
         assertDoesNotThrow(() -> parse("<?php $f = <<<EOT\ntext\nEOT;\n echo 1;"));
     }
 
+    // 验证生成器中的 yield 和 yield from 表达式可以解析。
     @Test
-    void 生成器与yield() {
+    void parsesGeneratorsAndYieldExpressions() {
         assertDoesNotThrow(() -> parse("<?php function g() { yield; yield 1; yield $k => $v; }"));
         assertDoesNotThrow(() -> parse("<?php function h() { yield from g(); $x = yield; }"));
         assertDoesNotThrow(() -> parse("<?php function yields() { yield 1 + 2; }"));
     }
 
+    // 验证内建语法、类型转换、异常处理和其他关键字可以解析。
     @Test
-    void 内建函数与其它关键字() {
+    void parsesBuiltinsAndOtherKeywords() {
         assertDoesNotThrow(() -> parse(
                 "<?php isset($a, $b['k']); empty($c);"));
         assertDoesNotThrow(() -> parse(
@@ -245,15 +260,17 @@ class ParseSmokeTest {
                 "<?php /* block */ echo /** doc */ 1; # hash comment\n echo 2;"));
     }
 
+    // 验证行注释中的 PHP 关闭标签会结束 PHP 模式。
     @Test
-    void 注释中的关闭标签() {
+    void handlesClosingTagsInLineComments() {
         // 行注释中的 ?> 会结束 PHP 模式（zend 语义），剩余内容被丢弃
         assertDoesNotThrow(() -> parse("<?php echo 1; // comment ?> garbage"));
         assertDoesNotThrow(() -> parse("<?php echo 1; # comment ?> garbage <?php echo 2;"));
     }
 
+    // 验证语法树文本包含程序根节点、表达式节点和运算符。
     @Test
-    void 语法树结构() {
+    void includesExpectedNodesInAstTree() {
         AstNode tree = parse("<?php $a = 1 + 2;");
         String text = tree.toTreeString(false);
         assertTrue(text.contains("program"), "根节点应为 program: " + text);

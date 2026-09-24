@@ -11,8 +11,9 @@ import static org.junit.jupiter.api.Assertions.*;
 /** CUP 升级后直接验证 AST 字段、列表和结合性，而非仅验证解析成功。 */
 class AstStructureTest {
 
+    // 验证空程序和空声明保留空列表，并支持语法树遍历。
     @Test
-    void 空程序和空声明保留空列表并支持遍历() {
+    void emptyProgramsAndDeclarationsKeepTraversableEmptyLists() {
         AstNode empty = Main.parse("<?php\n");
         assertEquals("program", empty.getNodeName());
         assertTrue(list(empty, "stmts").isEmpty());
@@ -21,7 +22,7 @@ class AstStructureTest {
         AstNode tree = Main.parse("<?php function f() {} class C {} namespace N {} namespace {}");
         List<AstNode> statements = list(tree, "stmts");
         assertEquals(4, statements.size());
-        AstNode function = child(statements.get(0), "function");
+        AstNode function = child(statements.getFirst(), "function");
         assertTrue(list(function, "params").isEmpty());
         assertTrue(list(function, "stmts").isEmpty());
         assertTrue(list(child(statements.get(1), "clazz"), "members").isEmpty());
@@ -30,8 +31,9 @@ class AstStructureTest {
         assertDoesNotThrow(() -> tree.toTreeString(false));
     }
 
+    // 验证参数和函数的可选字段直接反映有无对应语法。
     @Test
-    void 参数和函数的可选字段直接表示有无() {
+    void optionalParameterAndFunctionFieldsReflectPresence() {
         AstNode plain = child(top("function plain($a) {}"), "function");
         absent(plain, "returnsRef");
         AstNode param = list(plain, "params").getFirst();
@@ -45,8 +47,8 @@ class AstStructureTest {
         assertEquals("&", text(child(referenced, "returnsRef")));
         List<AstNode> params = list(referenced, "params");
         assertEquals(2, params.size());
-        assertEquals("type_expr", child(params.get(0), "type").getNodeName());
-        assertEquals("?", text(child(child(params.get(0), "type"), "op")));
+        assertEquals("type_expr", child(params.getFirst(), "type").getNodeName());
+        assertEquals("?", text(child(child(params.getFirst(), "type"), "op")));
         assertEquals("&", text(child(params.get(0), "byRef")));
         absent(params.get(0), "variadic");
         assertEquals("...", text(child(params.get(1), "variadic")));
@@ -57,8 +59,9 @@ class AstStructureTest {
         assertDoesNotThrow(() -> referenced.toTreeString(false));
     }
 
+    // 验证直接列表保留语句、参数和表达式的源码顺序。
     @Test
-    void 直接列表保留语句参数与表达式顺序() {
+    void directListsPreserveStatementParameterAndExpressionOrder() {
         AstNode tree = Main.parse("<?php function f($a, $b, $c) { echo 1, 2, 3; return 4; }");
         AstNode function = child(list(tree, "stmts").getFirst(), "function");
         assertEquals(List.of("a", "b", "c"), list(function, "params").stream()
@@ -71,8 +74,9 @@ class AstStructureTest {
         assertEquals("4", number(child(child(body.get(1), "stmt"), "value")));
     }
 
+    // 验证方法和类常量的修饰符列表保留空值及声明顺序。
     @Test
-    void 方法和类常量的修饰符直接列表保留空值与顺序() {
+    void methodAndConstantModifierListsPreserveEmptyValuesAndOrder() {
         AstNode clazz = child(top("class C { function f() {} public static function g() {}"
                 + " const X = 1; protected const Y = 2; }"), "clazz");
         List<AstNode> members = list(clazz, "members");
@@ -85,8 +89,9 @@ class AstStructureTest {
                 .map(modifier -> text(child(modifier, "kw"))).toList());
     }
 
+    // 验证缺省构造参数与显式空参数列表可以区分。
     @Test
-    void 构造参数的缺省与显式空列表可区分() {
+    void constructorArgumentsDistinguishOmittedAndExplicitEmptyLists() {
         AstNode withoutArgs = onlyNamed(expression("new Foo"), "new_expr");
         absent(withoutArgs, "ctorArgs");
         AstNode emptyArgs = onlyNamed(expression("new Foo()"), "new_expr");
@@ -96,17 +101,19 @@ class AstStructureTest {
                 .map(argument -> number(child(argument, "arg"))).toList());
     }
 
+    // 验证方括号偏移直接使用可选表达式，不增加包装节点。
     @Test
-    void 方括号偏移可选字段不再使用包装节点() {
-        AstNode emptyIndex = onlyVariant(expression("$a[]"), "callable_variable", "Index");
+    void optionalArrayOffsetsUseExpressionsWithoutWrapperNodes() {
+        AstNode emptyIndex = onlyVariant(expression("$a[]"));
         absent(emptyIndex, "offset");
-        AstNode index = onlyVariant(expression("$a[1]"), "callable_variable", "Index");
+        AstNode index = onlyVariant(expression("$a[1]"));
         assertEquals("expr", child(index, "offset").getNodeName());
         assertEquals("1", number(child(index, "offset")));
     }
 
+    // 验证数组空槽以及尾逗号对应的空槽均被保留。
     @Test
-    void 数组空槽和尾逗号不会丢失() {
+    void arrayHolesAndTrailingCommaSlotsArePreserved() {
         AstNode array = onlyNamed(expression("[1, , 3,]"), "array_pair_list");
         List<AstNode> slots = list(array, "items");
         assertEquals(4, slots.size());
@@ -122,16 +129,18 @@ class AstStructureTest {
         absent(emptySlots.getFirst(), "pair");
     }
 
+    // 验证 PHP 7.2 的参数和实参禁止尾逗号，分组导入允许尾逗号。
     @Test
-    void Php72参数和实参禁止尾逗号而分组导入允许() {
+    void php72RejectsTrailingParameterAndArgumentCommasButAllowsGroupUseCommas() {
         assertThrows(PhpParseException.class, () -> Main.parse("<?php function f($a,) {}"));
         assertThrows(PhpParseException.class, () -> Main.parse("<?php f(1,);"));
         AstNode group = child(top("use A\\{B, C,};"), "mixedUse");
         assertEquals(2, list(group, "uses").size());
     }
 
+    // 验证普通运算统一生成 Binary 节点，复合赋值生成 AssignOp 节点。
     @Test
-    void 普通运算统一为Binary而复合赋值为AssignOp() {
+    void ordinaryOperationsUseBinaryNodesAndCompoundAssignmentsUseAssignOpNodes() {
         for (String operator : List.of("+", "-", "*", "/", "%", ".", "&", "|", "^", "<<", ">>", "**")) {
             for (String leftOperand : List.of("$a", "1", "(1)")) {
                 AstNode binary = value(expression(leftOperand + " " + operator + " $b"));
@@ -158,8 +167,9 @@ class AstStructureTest {
         }
     }
 
+    // 验证乘法优先于加法，连续减法按左结合解析。
     @Test
-    void 乘法优先且减法左结合() {
+    void multiplicationTakesPrecedenceAndSubtractionAssociatesLeft() {
         AstNode sum = value(expression("1 + 2 * 3"));
         assertEquals("+", text(child(sum, "op")));
         assertEquals("1", number(child(sum, "left")));
@@ -176,8 +186,9 @@ class AstStructureTest {
         assertEquals("3", number(child(left, "right")));
     }
 
+    // 验证幂运算和空合并运算均按右结合解析。
     @Test
-    void 幂和空合并右结合() {
+    void exponentiationAndNullCoalescingAssociateRight() {
         for (String operator : List.of("**", "??")) {
             AstNode outer = value(expression("1 " + operator + " 2 " + operator + " 3"));
             assertEquals(operator, text(child(outer, "op")));
@@ -189,8 +200,9 @@ class AstStructureTest {
         }
     }
 
+    // 验证 PHP 7.2 三元运算左结合，短三元运算没有中间表达式字段。
     @Test
-    void 三元在Php72左结合且短三元没有中间字段() {
+    void php72TernariesAssociateLeftAndShortTernariesOmitTheMiddleField() {
         AstNode outer = value(expression("1 ? 2 : 3 ? 4 : 5"));
         assertEquals("Conditional", outer.getClass().getSimpleName());
         assertEquals("4", number(child(outer, "thenExpr")));
@@ -207,8 +219,9 @@ class AstStructureTest {
         assertEquals("2", number(child(shortForm, "elseExpr")));
     }
 
+    // 验证 else 分支绑定最近且尚未匹配 else 的 if。
     @Test
-    void Else绑定最近的If() {
+    void elseBindsToTheNearestUnmatchedIf() {
         AstNode outer = child(child(top("if ($a) if ($b) echo 1; else echo 2;"), "stmt"), "ifStmt");
         absent(outer, "elseStmt");
         AstNode outerElement = child(outer, "stmt");
@@ -274,10 +287,10 @@ class AstStructureTest {
         return matches.getFirst();
     }
 
-    private static AstNode onlyVariant(AstNode tree, String name, String variant) {
-        List<AstNode> matches = named(tree, name).stream()
-                .filter(node -> node.getClass().getSimpleName().equals(variant)).toList();
-        assertEquals(1, matches.size(), variant);
+    private static AstNode onlyVariant(AstNode tree) {
+        List<AstNode> matches = named(tree, "callable_variable").stream()
+                .filter(node -> node.getClass().getSimpleName().equals("Index")).toList();
+        assertEquals(1, matches.size(), "Index");
         return matches.getFirst();
     }
 }

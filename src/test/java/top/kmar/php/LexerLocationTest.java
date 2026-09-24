@@ -25,6 +25,7 @@ class LexerLocationTest {
                 token.getLocation());
     }
 
+    // 验证单行词法单元的位置采用左闭右开的列范围。
     @Test
     void tokenSpansUseExclusiveEndColumns() throws Exception {
         PhpLexer lexer = lexer("<?php $foo += 12;");
@@ -34,6 +35,7 @@ class LexerLocationTest {
         token(lexer, PhpSymbols.SEMI, 1, 17, 1, 18);
     }
 
+    // 验证跨行词法单元在 LF、CR 和 CRLF 换行下的位置一致。
     @Test
     void multilineTokensTrackLfCrAndCrLf() throws Exception {
         for (String newline : new String[]{"\n", "\r", "\r\n"}) {
@@ -44,6 +46,7 @@ class LexerLocationTest {
         }
     }
 
+    // 验证以换行结束的 heredoc 词法单元，其结束位置是下一行首列。
     @Test
     void newlineTerminatedHeredocTokensEndAtNextLineStart() throws Exception {
         PhpLexer lexer = lexer("<?php <<<EOT\ntext\nEOT;\n");
@@ -53,6 +56,7 @@ class LexerLocationTest {
         token(lexer, PhpSymbols.SEMI, 3, 4, 3, 5);
     }
 
+    // 验证跨行 AST 节点正确合并子节点位置，不混用不同行的列号。
     @Test
     void astSpansCrossLinesWithoutMixingColumns() {
         AstNode root = Main.parse("<?php $a +\n  12;");
@@ -63,6 +67,7 @@ class LexerLocationTest {
         assertEquals(ComplexLocation.of(2, 3, 2, 5), binary.getByLabel("right").getLocation());
     }
 
+    // 验证末尾可选字段缺失时，节点位置仍取自已有子节点。
     @Test
     void missingTrailingOptionalFieldKeepsThePresentChildSpan() {
         AstNode root = Main.parse("<?php new Foo;");
@@ -74,6 +79,7 @@ class LexerLocationTest {
         assertEquals(ComplexLocation.of(1, 11, 1, 14), constructor.getLocation());
     }
 
+    // 验证不同词法结束状态下的 EOF 均使用工厂规范化的位置，并可重复读取。
     @Test
     void eofUsesFactoryNormalizedLocationInEveryTerminalState() throws Exception {
         for (String source : new String[]{"<?php ", "<?php 1;", "<?php ?>ignored",
@@ -89,6 +95,7 @@ class LexerLocationTest {
         assertEquals(ComplexLocation.NO_LOCATION, Main.parse("<?php ").getLocation());
     }
 
+    // 验证非法输入仍分别抛出词法异常和语法异常。
     @Test
     void invalidInputsKeepTheirExceptionTypes() {
         assertThrows(PhpLexerException.class, () -> Main.parse("echo 1;"));
