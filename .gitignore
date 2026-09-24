@@ -16,6 +16,7 @@ out/
 AGENTS.md
 .claude
 .codex
+docs
 
 ### Kotlin ###
 .kotlin
