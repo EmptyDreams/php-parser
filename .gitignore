@@ -14,6 +14,8 @@ out/
 !**/src/test/**/out/
 .mcp.json
 AGENTS.md
+.claude
+.codex
 
 ### Kotlin ###
 .kotlin

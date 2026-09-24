@@ -5,6 +5,8 @@ plugins {
 group = 'top.kmar.php'
 version = '1.0-SNAPSHOT'
 
+def cupVersion = '1.1.0'
+
 configurations {
     jflex
     cup
@@ -26,33 +28,23 @@ sourceSets {
 }
 
 dependencies {
-    // 词法分析器生成器（仅在生成任务中使用）
+    // JFlex 的内部解析器使用原版 CUP；其 classpath 必须与 fork 运行时隔离。
     jflex 'de.jflex:jflex:1.9.1'
     // CUP 解析器生成器（仅在生成任务中使用）
-    cup 'top.kmar.cup:java-cup:1.0.0'
+    cup "top.kmar.cup:java-cup:${cupVersion}"
     // 生成的解析器运行时依赖
-    implementation 'top.kmar.cup:java-cup-runtime:1.0.0'
+    implementation "top.kmar.cup:java-cup-runtime:${cupVersion}"
 
-    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.2'
 }
 
 def cupSource = layout.projectDirectory.file('src/main/cup/php.cup')
 def flexSource = layout.projectDirectory.file('src/main/jflex/php.flex')
 def jflexOutputDir = layout.buildDirectory.dir('generated/main/jflex/top/kmar/php')
+def cupOutputDir = layout.buildDirectory.dir('generated/main/cup/top/kmar/php')
 def cupParserClass = 'PhpParser'
 def cupSymbolsClass = 'PhpSymbols'
-
-// jflex 生成的代码基于原版 CUP 运行时，与本项目使用的 fork（top.kmar.cup）不兼容，
-// 生成后需要做的文本替换都集中在这里维护。
-// 使用完全限定名（与 jflex 骨架风格一致），不依赖 flex 文件里的 import
-def jflexPostFixes = [
-        // fork 的 Symbol 是抽象类且构造器需要 Location；与 lr_parser.scan() 构造
-        // EOF 符号的方式保持一致：
-        // getSymbolFactory().newSymbol(EOF_sym(), Location.NO_LOCATION)
-        'new java_cup.runtime.Symbol(sym.EOF)':
-                "new java_cup.runtime.symbol.complex.ComplexEmptySymbol(" +
-                        "${cupSymbolsClass}.EOF, java_cup.runtime.symbol.Location.NO_LOCATION)"
-]
 
 // jflex 的 -d 与 CUP 的 -destdir 都不会自动拼接包路径，需要写全
 tasks.register('generateJFlexLexer', JavaExec) {
@@ -65,22 +57,8 @@ tasks.register('generateJFlexLexer', JavaExec) {
             flexSource
     ]
     workingDir = project.projectDir
-    // 语法文件不存在时跳过，避免项目初始阶段构建失败
-    onlyIf { flexSource.asFile.exists() }
     inputs.file(flexSource)
     outputs.dir(jflexOutputDir)
-    doLast {
-        jflexOutputDir.get().asFile.eachFileRecurse { f ->
-            if (!f.name.endsWith('.java')) return
-            def text = f.getText('UTF-8')
-            def patched = text
-            jflexPostFixes.each { from, to -> patched = patched.replace(from, to) }
-            if (patched != text) {
-                f.write(patched, 'UTF-8')
-                logger.lifecycle("已修补 jflex 生成代码: {}", f)
-            }
-        }
-    }
 }
 
 tasks.register('generateCupParser', JavaExec) {
@@ -90,13 +68,34 @@ tasks.register('generateCupParser', JavaExec) {
             '-parser', cupParserClass,
             '-symbols', cupSymbolsClass,
             '-interface',
-            '-destdir', layout.buildDirectory.dir('generated/main/cup/top/kmar/php').get().asFile,
+            // 生成非终结符常量与 NON_TERMINAL_NAMES（ComplexSymbolFactory 需要）
+            '-nonterms',
+            // AST 模式：为每个 AstNode 类型的非终结符生成语法树节点类。
+            // 用 %p（完整名称）：本文法存在 top_statement/class_statement 这类
+            // 同后缀非终结符，%s 截前缀后类名会冲突
+            '-ast', 'Node%p',
+            // 与 php-src 一致：该文法在 bison 下是零冲突的，
+            // 出现任何冲突都说明翻译有误，直接让生成失败
+            '-expect', '0',
+            // 压缩 reduce 表：不压缩时 _production_table 的字符串常量
+            // 超过 64KB 上限，生成的 parser 无法编译（“代码过长”）
+            '-compact_red',
+            // 仅清理 CUP 专属输出目录，避免文法调整后残留旧节点类。
+            '-auto_clear',
+            '-destdir', cupOutputDir.get().asFile,
             cupSource
     ]
     workingDir = project.projectDir
-    onlyIf { cupSource.asFile.exists() }
     inputs.file(cupSource)
-    outputs.dir(layout.buildDirectory.dir('generated/main/cup/top/kmar/php'))
+    outputs.dir(cupOutputDir)
+}
+// Windows 平台默认编码是 GBK，源码一律按 UTF-8 编译
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('generateJFlexLexer'), tasks.named('generateCupParser')
 }
 
 test {

@@ -1,0 +1,715 @@
+/* -----------------------------------------------------------------------------
+ * PHP 7.2 语法分析器（CUP AST 模式）
+ *
+ * 翻译自 php-src PHP-7.2.34 的 Zend/zend_language_parser.y（bison）。
+ * 原文法 %expect 0（零冲突），此处通过 -expect 0 保持同等约束；
+ * 优先级声明与 bison 版完全同序。
+ *
+ * 与 zend 原文的差异（均不改变接受语言）：
+ * 1. 移除 T_INLINE_HTML / T_OPEN_TAG / T_CLOSE_TAG / T_OPEN_TAG_WITH_ECHO /
+ *    T_COMMENT / T_DOC_COMMENT / T_WHITESPACE 相关内容（纯 PHP 模式，
+ *    词法层已按 zendlex() 语义把 "?>" 转成分号并跳过 HTML）。
+ * 2. zend 中纯语义用途的非终结符（backup_doc_comment、backup_fn_flags、
+ *    function、returns_ref、is_reference、is_variadic、possible_comma、
+ *    optional_expr、optional_type、ctor_arguments 等）折叠为 EBNF 的 X? 简写。
+ * 3. 列表直接使用 EBNF，避免只有列表字段的 AST 包装层；普通列表用
+ *    X[COMMA !]+ / X[COMMA !]*，允许尾随逗号的 use 列表用 X[COMMA ?]+。
+ *    数组保留可空槽位，以 possible_array_pair[COMMA !]+ 表达空槽和尾逗号。
+ * 4. T_HALT_COMPILER 是单一 token（词法层已要求 "();" 完整）。
+ *
+ * AST 模式约定：
+ * - 所有非终结符类型为 AstNode，自动生成 Node<pascal-name> 节点类；
+ * - 承担“区分产生式”职责的关键字/运算符 token 一律加 label（如 PLUS:op），
+ *   字段集相同的不同产生式会合并为同一变体类，label 便是运行期的区分依据；
+ * - %namer 为重要变体命名；CUP 1.1.0 与 %prec 同用时仍忽略 %namer。
+ * -------------------------------------------------------------------------- */
+
+package top.kmar.php;
+
+import java_cup.runtime.AstNode;
+
+/* 词法层可能返回，但文法中不使用（遇到即语法错误） */
+terminal String T_ERROR;
+/* 仅用于优先级声明（对应 bison 原文 %left T_NOELSE） */
+terminal String T_NOELSE;
+
+/* 值 token */
+terminal String T_STRING, T_VARIABLE, T_LNUMBER, T_DNUMBER, T_NUM_STRING;
+terminal String T_STRING_VARNAME, T_CONSTANT_ENCAPSED_STRING, T_ENCAPSED_AND_WHITESPACE;
+terminal String T_START_HEREDOC, T_END_HEREDOC;
+
+/* 关键字 */
+terminal String T_INCLUDE, T_INCLUDE_ONCE, T_EVAL, T_REQUIRE, T_REQUIRE_ONCE;
+terminal String T_LOGICAL_OR, T_LOGICAL_XOR, T_LOGICAL_AND, T_PRINT, T_YIELD, T_YIELD_FROM;
+terminal String T_INSTANCEOF, T_NEW, T_CLONE, T_EXIT, T_IF, T_ELSEIF, T_ELSE, T_ENDIF;
+terminal String T_ECHO, T_DO, T_WHILE, T_ENDWHILE, T_FOR, T_ENDFOR;
+terminal String T_FOREACH, T_ENDFOREACH, T_DECLARE, T_ENDDECLARE, T_AS;
+terminal String T_SWITCH, T_ENDSWITCH, T_CASE, T_DEFAULT, T_BREAK, T_CONTINUE, T_GOTO;
+terminal String T_FUNCTION, T_CONST, T_RETURN, T_TRY, T_CATCH, T_FINALLY, T_THROW;
+terminal String T_USE, T_INSTEADOF, T_GLOBAL, T_STATIC, T_ABSTRACT, T_FINAL;
+terminal String T_PRIVATE, T_PROTECTED, T_PUBLIC, T_VAR, T_UNSET, T_ISSET, T_EMPTY;
+terminal String T_CLASS, T_TRAIT, T_INTERFACE, T_EXTENDS, T_IMPLEMENTS;
+terminal String T_HALT_COMPILER, T_NAMESPACE, T_LIST, T_ARRAY, T_CALLABLE;
+
+/* 魔术常量 */
+terminal String T_CLASS_C, T_TRAIT_C, T_FUNC_C, T_METHOD_C;
+terminal String T_LINE, T_FILE, T_DIR, T_NS_C;
+
+/* 运算符与标点 */
+terminal String T_OBJECT_OPERATOR, T_DOUBLE_ARROW, T_PAAMAYIM_NEKUDOTAYIM, T_NS_SEPARATOR;
+terminal String T_ELLIPSIS, T_COALESCE, T_POW, T_INC, T_DEC, T_SL, T_SR;
+terminal String T_BOOLEAN_OR, T_BOOLEAN_AND, T_IS_EQUAL, T_IS_NOT_EQUAL;
+terminal String T_IS_IDENTICAL, T_IS_NOT_IDENTICAL, T_SPACESHIP;
+terminal String T_IS_SMALLER_OR_EQUAL, T_IS_GREATER_OR_EQUAL;
+terminal String T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL, T_CONCAT_EQUAL;
+terminal String T_MOD_EQUAL, T_AND_EQUAL, T_OR_EQUAL, T_XOR_EQUAL, T_SL_EQUAL, T_SR_EQUAL;
+terminal String T_POW_EQUAL;
+terminal String T_INT_CAST, T_DOUBLE_CAST, T_STRING_CAST, T_ARRAY_CAST;
+terminal String T_OBJECT_CAST, T_BOOL_CAST, T_UNSET_CAST;
+terminal String T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES;
+terminal String SEMI, COMMA, COLON, DOT, LBRACK, RBRACK, LPAREN, RPAREN;
+terminal String PIPE, CARET, AMP, PLUS, MINUS, STAR, SLASH, EQUAL, PERCENT;
+terminal String BANG, TILDE, DOLLAR, LT, GT, QUESTION, AT, LBRACE, RBRACE;
+terminal String DQUOTE, BACKTICK;
+
+/* ---------------- 非终结符（全部生成 AST 节点） ---------------- */
+
+non terminal AstNode program;
+non terminal AstNode reserved_non_modifiers, semi_reserved, identifier;
+non terminal AstNode namespace_name, name;
+non terminal AstNode top_statement, use_type;
+non terminal AstNode group_use_declaration, mixed_group_use_declaration;
+non terminal AstNode inline_use_declaration, unprefixed_use_declaration, use_declaration;
+non terminal AstNode const_decl, inner_statement, statement;
+non terminal AstNode catch_list, finally_statement;
+non terminal AstNode function_declaration_statement;
+non terminal AstNode class_declaration_statement, class_modifier;
+non terminal AstNode trait_declaration_statement, interface_declaration_statement;
+non terminal AstNode extends_from, interface_extends_list, implements_list;
+non terminal AstNode foreach_variable, for_statement, foreach_statement, declare_statement;
+non terminal AstNode switch_case_list, case_list, case_separator, while_statement;
+non terminal AstNode if_stmt_without_else, if_stmt, alt_if_stmt_without_else, alt_if_stmt;
+non terminal AstNode parameter, type_expr, type, return_type;
+non terminal AstNode argument, argument_list, static_var;
+non terminal AstNode class_statement, trait_adaptations, trait_adaptation;
+non terminal AstNode trait_precedence, trait_alias, trait_method_reference;
+non terminal AstNode absolute_trait_method_reference, method_body, member_modifier;
+non terminal AstNode property, class_const_decl;
+non terminal AstNode anonymous_class, new_expr, expr_without_variable;
+non terminal AstNode lexical_vars, lexical_var, function_call;
+non terminal AstNode class_name, class_name_reference, exit_expr, backticks_expr;
+non terminal AstNode dereferencable_scalar, scalar, constant, expr;
+non terminal AstNode dereferencable, callable_expr, callable_variable, variable;
+non terminal AstNode static_member, new_variable, member_name, property_name;
+non terminal AstNode possible_array_pair, array_pair_list, array_pair;
+non terminal AstNode encaps_list, encaps_var, encaps_var_offset;
+non terminal AstNode internal_functions_in_yacc;
+non terminal AstNode simple_variable;
+
+/* ---------------- 优先级（与 bison 原文逐行同序，声明顺序即优先级；
+   CUP 规范要求 precedence 声明位于符号声明之后、start 之前） ---------------- */
+
+precedence left T_INCLUDE, T_INCLUDE_ONCE, T_EVAL, T_REQUIRE, T_REQUIRE_ONCE;
+precedence left COMMA;
+precedence left T_LOGICAL_OR;
+precedence left T_LOGICAL_XOR;
+precedence left T_LOGICAL_AND;
+precedence right T_PRINT;
+precedence right T_YIELD;
+precedence right T_DOUBLE_ARROW;
+precedence right T_YIELD_FROM;
+precedence left EQUAL, T_PLUS_EQUAL, T_MINUS_EQUAL, T_MUL_EQUAL, T_DIV_EQUAL, T_CONCAT_EQUAL, T_MOD_EQUAL, T_AND_EQUAL, T_OR_EQUAL, T_XOR_EQUAL, T_SL_EQUAL, T_SR_EQUAL, T_POW_EQUAL;
+precedence left QUESTION, COLON;
+precedence right T_COALESCE;
+precedence left T_BOOLEAN_OR;
+precedence left T_BOOLEAN_AND;
+precedence left PIPE;
+precedence left CARET;
+precedence left AMP;
+precedence nonassoc T_IS_EQUAL, T_IS_NOT_EQUAL, T_IS_IDENTICAL, T_IS_NOT_IDENTICAL, T_SPACESHIP;
+precedence nonassoc LT, T_IS_SMALLER_OR_EQUAL, GT, T_IS_GREATER_OR_EQUAL;
+precedence left T_SL, T_SR;
+precedence left PLUS, MINUS, DOT;
+precedence left STAR, SLASH, PERCENT;
+precedence right BANG;
+precedence nonassoc T_INSTANCEOF;
+precedence right TILDE, T_INC, T_DEC, T_INT_CAST, T_DOUBLE_CAST, T_STRING_CAST, T_ARRAY_CAST, T_OBJECT_CAST, T_BOOL_CAST, T_UNSET_CAST, AT;
+precedence right T_POW;
+precedence right LBRACK;
+precedence nonassoc T_NEW, T_CLONE;
+precedence left T_NOELSE;
+precedence left T_ELSEIF;
+precedence left T_ELSE;
+precedence left T_ENDIF;
+precedence right T_STATIC, T_ABSTRACT, T_FINAL, T_PRIVATE, T_PROTECTED, T_PUBLIC;
+
+start with program;
+
+/* ============================== 文法 ============================== */
+
+program ::= top_statement*:stmts;
+
+/* -------- 标识符（7.0+ 允许半保留字作为方法名/常量名） -------- */
+
+reserved_non_modifiers ::=
+      T_INCLUDE:kw | T_INCLUDE_ONCE:kw | T_EVAL:kw | T_REQUIRE:kw | T_REQUIRE_ONCE:kw
+    | T_LOGICAL_OR:kw | T_LOGICAL_XOR:kw | T_LOGICAL_AND:kw
+    | T_INSTANCEOF:kw | T_NEW:kw | T_CLONE:kw | T_EXIT:kw | T_IF:kw | T_ELSEIF:kw
+    | T_ELSE:kw | T_ENDIF:kw | T_ECHO:kw | T_DO:kw | T_WHILE:kw | T_ENDWHILE:kw
+    | T_FOR:kw | T_ENDFOR:kw | T_FOREACH:kw | T_ENDFOREACH:kw | T_DECLARE:kw
+    | T_ENDDECLARE:kw | T_AS:kw | T_TRY:kw | T_CATCH:kw | T_FINALLY:kw
+    | T_THROW:kw | T_USE:kw | T_INSTEADOF:kw | T_GLOBAL:kw | T_VAR:kw | T_UNSET:kw
+    | T_ISSET:kw | T_EMPTY:kw | T_CONTINUE:kw | T_GOTO:kw
+    | T_FUNCTION:kw | T_CONST:kw | T_RETURN:kw | T_PRINT:kw | T_YIELD:kw
+    | T_LIST:kw | T_SWITCH:kw | T_ENDSWITCH:kw | T_CASE:kw | T_DEFAULT:kw | T_BREAK:kw
+    | T_ARRAY:kw | T_CALLABLE:kw | T_EXTENDS:kw | T_IMPLEMENTS:kw | T_NAMESPACE:kw
+    | T_TRAIT:kw | T_INTERFACE:kw | T_CLASS:kw
+    | T_CLASS_C:kw | T_TRAIT_C:kw | T_FUNC_C:kw | T_METHOD_C:kw
+    | T_LINE:kw | T_FILE:kw | T_DIR:kw | T_NS_C:kw
+    ;
+
+semi_reserved ::= reserved_non_modifiers:keyword %namer Reserved
+                | T_STATIC:kw | T_ABSTRACT:kw | T_FINAL:kw
+                | T_PRIVATE:kw | T_PROTECTED:kw | T_PUBLIC:kw
+                ;
+
+identifier ::= T_STRING:name %namer Identifier
+             | semi_reserved:kw %namer SemiReservedIdentifier
+             ;
+
+/* -------- 名称 -------- */
+
+namespace_name ::= T_STRING:name %namer Part
+                 | namespace_name:parent T_NS_SEPARATOR T_STRING:part %namer Nested
+                 ;
+
+name ::= namespace_name:n %namer Unqualified
+       | T_NAMESPACE:kw T_NS_SEPARATOR namespace_name:n %namer Relative
+       | T_NS_SEPARATOR:kw namespace_name:n %namer FullyQualified
+       ;
+
+/* -------- 顶层 -------- */
+
+top_statement ::=
+      statement:stmt %namer Statement
+    | function_declaration_statement:function %namer FunctionDecl
+    | class_declaration_statement:clazz %namer ClassDecl
+    | trait_declaration_statement:trait %namer TraitDecl
+    | interface_declaration_statement:iface %namer InterfaceDecl
+    | T_HALT_COMPILER:halt %namer HaltCompiler
+    | T_NAMESPACE namespace_name:n SEMI %namer Namespace
+    | T_NAMESPACE namespace_name:n LBRACE top_statement*:stmts RBRACE %namer NamespaceBlock
+    | T_NAMESPACE LBRACE top_statement*:stmts RBRACE %namer GlobalNamespaceBlock
+    | T_USE mixed_group_use_declaration:mixedUse SEMI %namer UseMixedGroup
+    | T_USE use_type:type group_use_declaration:use SEMI %namer UseGroup
+    | T_USE use_declaration[COMMA !]+:uses SEMI %namer Use
+    | T_USE use_type:type use_declaration[COMMA !]+:uses SEMI %namer UseTyped
+    | T_CONST const_decl[COMMA !]+:consts SEMI %namer Const
+    ;
+
+use_type ::= T_FUNCTION:kw %namer UseFunction
+           | T_CONST:kw %namer UseConst
+           ;
+
+group_use_declaration ::=
+      namespace_name:prefix T_NS_SEPARATOR LBRACE unprefixed_use_declaration[COMMA ?]+:uses RBRACE %namer GroupUse
+    | T_NS_SEPARATOR namespace_name:prefix T_NS_SEPARATOR LBRACE unprefixed_use_declaration[COMMA ?]+:uses RBRACE %namer GroupUseAbsolute
+    ;
+
+mixed_group_use_declaration ::=
+      namespace_name:prefix T_NS_SEPARATOR LBRACE inline_use_declaration[COMMA ?]+:uses RBRACE %namer MixedGroupUse
+    | T_NS_SEPARATOR namespace_name:prefix T_NS_SEPARATOR LBRACE inline_use_declaration[COMMA ?]+:uses RBRACE %namer MixedGroupUseAbsolute
+    ;
+
+inline_use_declaration ::= unprefixed_use_declaration:use %namer InlineUse
+                          | use_type:type unprefixed_use_declaration:use %namer InlineUseTyped
+                          ;
+
+unprefixed_use_declaration ::= namespace_name:n %namer UseElem
+                             | namespace_name:n T_AS T_STRING:alias %namer UseElemAs
+                             ;
+
+use_declaration ::= unprefixed_use_declaration:use %namer UseDecl
+                   | T_NS_SEPARATOR:kw unprefixed_use_declaration:use %namer UseDeclAbsolute
+                   ;
+
+const_decl ::= T_STRING:name EQUAL expr:value %namer ConstDecl;
+
+inner_statement ::=
+      statement:stmt %namer Statement
+    | function_declaration_statement:function %namer FunctionDecl
+    | class_declaration_statement:clazz %namer ClassDecl
+    | trait_declaration_statement:trait %namer TraitDecl
+    | interface_declaration_statement:iface %namer InterfaceDecl
+    ;
+
+/* -------- 语句 -------- */
+
+statement ::=
+      LBRACE inner_statement*:stmts RBRACE %namer Block
+    | if_stmt:ifStmt %namer If
+    | alt_if_stmt:altIfStmt %namer AltIf
+    | T_WHILE LPAREN expr:cond RPAREN while_statement:whileBody %namer While
+    | T_DO statement:body T_WHILE LPAREN expr:cond RPAREN SEMI %namer DoWhile
+    | T_FOR LPAREN expr[COMMA !]*:forInit SEMI expr[COMMA !]*:forCond SEMI expr[COMMA !]*:forStep RPAREN for_statement:forBody %namer For
+    | T_SWITCH LPAREN expr:cond RPAREN switch_case_list:cases %namer Switch
+    | T_BREAK expr?:levels SEMI %namer Break
+    | T_CONTINUE expr?:levels SEMI %namer Continue
+    | T_RETURN expr?:value SEMI %namer Return
+    | T_GLOBAL simple_variable[COMMA !]+:globalVars SEMI %namer Global
+    | T_STATIC static_var[COMMA !]+:staticVars SEMI %namer Static
+    | T_ECHO expr[COMMA !]+:exprs SEMI %namer Echo
+    | expr:expression SEMI %namer ExpressionStatement
+    | T_UNSET LPAREN variable[COMMA !]+:unsetVars RPAREN SEMI %namer Unset
+    | T_FOREACH LPAREN expr:iterable T_AS foreach_variable:var RPAREN foreach_statement:foreachBody %namer Foreach
+    | T_FOREACH LPAREN expr:iterable T_AS foreach_variable:key T_DOUBLE_ARROW foreach_variable:valueVar RPAREN foreach_statement:foreachBody %namer ForeachKV
+    | T_DECLARE LPAREN const_decl[COMMA !]+:directives RPAREN declare_statement:declareBody %namer Declare
+    | SEMI %namer Empty
+    | T_TRY LBRACE inner_statement*:stmts RBRACE catch_list:catches finally_statement:finallyBlock %namer Try
+    | T_THROW expr:expr SEMI %namer Throw
+    | T_GOTO T_STRING:label SEMI %namer Goto
+    | T_STRING:label COLON %namer Label
+    ;
+
+catch_list ::=
+      /* empty */
+    | catch_list:catches T_CATCH LPAREN name[PIPE !]+:exceptions T_VARIABLE:var RPAREN LBRACE inner_statement*:stmts RBRACE %namer CatchItem
+    ;
+
+finally_statement ::= /* empty */
+                    | T_FINALLY LBRACE inner_statement*:stmts RBRACE %namer Finally
+                    ;
+
+function_declaration_statement ::=
+    T_FUNCTION AMP?:returnsRef T_STRING:name LPAREN parameter[COMMA !]*:params RPAREN
+    return_type:returnType LBRACE inner_statement*:stmts RBRACE %namer FuncDecl
+    ;
+
+class_declaration_statement ::=
+      class_modifier+:mods T_CLASS T_STRING:name extends_from:extendsFrom implements_list:implementsList LBRACE class_statement*:members RBRACE %namer ClassWithModifiers
+    | T_CLASS T_STRING:name extends_from:extendsFrom implements_list:implementsList LBRACE class_statement*:members RBRACE %namer Class
+    ;
+
+class_modifier ::= T_ABSTRACT:kw %namer Abstract | T_FINAL:kw %namer Final;
+
+trait_declaration_statement ::=
+    T_TRAIT T_STRING:name LBRACE class_statement*:members RBRACE %namer TraitDecl;
+
+interface_declaration_statement ::=
+    T_INTERFACE T_STRING:name interface_extends_list:extendsFrom LBRACE class_statement*:members RBRACE %namer InterfaceDecl;
+
+extends_from ::= /* empty */
+               | T_EXTENDS name:n %namer Extends
+               ;
+
+interface_extends_list ::= /* empty */
+                         | T_EXTENDS name[COMMA !]+:names %namer ExtendsList
+                         ;
+
+implements_list ::= /* empty */
+                  | T_IMPLEMENTS name[COMMA !]+:names %namer ImplementsList
+                  ;
+
+foreach_variable ::=
+      variable:v %namer Var
+    | AMP:amp variable:v %namer Ref
+    | T_LIST LPAREN array_pair_list:items RPAREN %namer List
+    | LBRACK array_pair_list:items RBRACK %namer ShortList
+    ;
+
+for_statement ::= statement:body %namer Body
+                | COLON inner_statement*:stmts T_ENDFOR SEMI %namer AltBody
+                ;
+
+foreach_statement ::= statement:body %namer Body
+                    | COLON inner_statement*:stmts T_ENDFOREACH SEMI %namer AltBody
+                    ;
+
+declare_statement ::= statement:body %namer Body
+                    | COLON inner_statement*:stmts T_ENDDECLARE SEMI %namer AltBody
+                    ;
+
+switch_case_list ::=
+      LBRACE case_list:cases RBRACE %namer Cases
+    | LBRACE SEMI case_list:cases RBRACE %namer CasesWithSemi
+    | COLON case_list:cases T_ENDSWITCH SEMI %namer AltCases
+    | COLON SEMI case_list:cases T_ENDSWITCH SEMI %namer AltCasesWithSemi
+    ;
+
+case_list ::=
+      /* empty */
+    | case_list:cases T_CASE expr:cond case_separator:sep inner_statement*:stmts %namer Case
+    | case_list:cases T_DEFAULT:kw case_separator:sep inner_statement*:stmts %namer DefaultCase
+    ;
+
+case_separator ::= COLON:colon %namer Colon | SEMI:semicolon %namer Semi;
+
+while_statement ::= statement:body %namer Body
+                  | COLON inner_statement*:stmts T_ENDWHILE SEMI %namer AltBody
+                  ;
+
+if_stmt_without_else ::=
+      T_IF LPAREN expr:cond RPAREN statement:body %namer IfElem
+    | if_stmt_without_else:chain T_ELSEIF LPAREN expr:cond RPAREN statement:body %namer ElseIfElem
+    ;
+
+if_stmt ::=
+      if_stmt_without_else:stmt %prec T_NOELSE %namer IfWithoutElse
+    | if_stmt_without_else:stmt T_ELSE statement:elseStmt %namer IfElse
+    ;
+
+alt_if_stmt_without_else ::=
+      T_IF LPAREN expr:cond RPAREN COLON inner_statement*:stmts %namer AltIfElem
+    | alt_if_stmt_without_else:chain T_ELSEIF LPAREN expr:cond RPAREN COLON inner_statement*:stmts %namer AltElseIfElem
+    ;
+
+alt_if_stmt ::=
+      alt_if_stmt_without_else:stmt T_ENDIF SEMI %namer AltIf
+    | alt_if_stmt_without_else:stmt T_ELSE COLON inner_statement*:stmts T_ENDIF SEMI %namer AltIfElse
+    ;
+
+/* -------- 参数与类型 -------- */
+
+parameter ::=
+      type_expr?:type AMP?:byRef T_ELLIPSIS?:variadic T_VARIABLE:var %namer Param
+    | type_expr?:type AMP?:byRef T_ELLIPSIS?:variadic T_VARIABLE:var EQUAL expr:defaultValue %namer ParamWithDefault
+    ;
+
+type_expr ::= type:t %namer Type
+            | QUESTION:op type:t %namer NullableType
+            ;
+
+type ::= T_ARRAY:kw %namer ArrayType
+       | T_CALLABLE:kw %namer CallableType
+       | name:n %namer NameType
+       ;
+
+return_type ::= /* empty */
+              | COLON type_expr:t %namer ReturnType
+              ;
+
+argument_list ::= LPAREN argument[COMMA !]*:args RPAREN %namer Args;
+
+argument ::= expr:arg %namer Arg
+           | T_ELLIPSIS:op expr:arg %namer UnpackArg
+           ;
+
+static_var ::= T_VARIABLE:var %namer StaticVar
+             | T_VARIABLE:var EQUAL expr:defaultValue %namer StaticVarWithDefault
+             ;
+
+/* -------- 类成员 -------- */
+
+class_statement ::=
+      member_modifier+:propMods property[COMMA !]+:props SEMI %namer PropertyDecl
+    | T_VAR:kw property[COMMA !]+:props SEMI %namer VarPropertyDecl
+    | member_modifier*:constMods T_CONST class_const_decl[COMMA !]+:consts SEMI %namer ConstDecl
+    | T_USE name[COMMA !]+:traits trait_adaptations:adaptations %namer UseTrait
+    | member_modifier*:methodMods T_FUNCTION AMP?:returnsRef identifier:name LPAREN parameter[COMMA !]*:params RPAREN return_type:returnType method_body:body %namer Method
+    ;
+
+trait_adaptations ::= SEMI %namer None
+                    | LBRACE RBRACE %namer Empty
+                    | LBRACE trait_adaptation+:adaptations RBRACE %namer Block
+                    ;
+
+trait_adaptation ::= trait_precedence:precedence SEMI %namer Precedence
+                   | trait_alias:alias SEMI %namer Alias
+                   ;
+
+trait_precedence ::=
+    absolute_trait_method_reference:method T_INSTEADOF name[COMMA !]+:insteadof %namer TraitPrecedence;
+
+trait_alias ::=
+      trait_method_reference:method T_AS T_STRING:alias %namer AliasAs
+    | trait_method_reference:method T_AS reserved_non_modifiers:keyword %namer AliasAsKeyword
+    | trait_method_reference:method T_AS member_modifier:modifier identifier:newName %namer AliasModifierNewName
+    | trait_method_reference:method T_AS member_modifier:modifier %namer AliasModifier
+    ;
+
+trait_method_reference ::= identifier:method %namer SelfMethod
+                         | absolute_trait_method_reference:absolute %namer ClassMethod
+                         ;
+
+absolute_trait_method_reference ::=
+    name:clazz T_PAAMAYIM_NEKUDOTAYIM identifier:method %namer TraitMethodRef;
+
+method_body ::= SEMI %namer AbstractBody
+              | LBRACE inner_statement*:stmts RBRACE %namer Body
+              ;
+
+member_modifier ::=
+      T_PUBLIC:kw %namer Public
+    | T_PROTECTED:kw %namer Protected
+    | T_PRIVATE:kw %namer Private
+    | T_STATIC:kw %namer Static
+    | T_ABSTRACT:kw %namer Abstract
+    | T_FINAL:kw %namer Final
+    ;
+
+property ::= T_VARIABLE:var %namer Property
+           | T_VARIABLE:var EQUAL expr:defaultValue %namer PropertyWithDefault
+           ;
+
+class_const_decl ::= identifier:name EQUAL expr:value %namer ClassConstDecl;
+
+/* -------- new / 匿名类 -------- */
+
+anonymous_class ::=
+    T_CLASS argument_list?:ctorArgs extends_from:extendsFrom implements_list:implementsList LBRACE class_statement*:members RBRACE %namer AnonymousClass;
+
+new_expr ::= T_NEW class_name_reference:clazz argument_list?:ctorArgs %namer New
+           | T_NEW anonymous_class:anonClass %namer NewAnonymous
+           ;
+
+/* -------- 表达式 -------- */
+
+expr_without_variable ::=
+      T_LIST LPAREN array_pair_list:items RPAREN EQUAL expr:value %namer ListAssign
+    | LBRACK array_pair_list:items RBRACK EQUAL expr:value %namer ShortListAssign
+    | variable:target EQUAL expr:value %namer Assign
+    | variable:target EQUAL AMP variable:ref %namer AssignRef
+    | T_CLONE expr:expr %namer Clone
+    | variable:target T_PLUS_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_MINUS_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_MUL_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_DIV_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_CONCAT_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_MOD_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_AND_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_OR_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_XOR_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_SL_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_SR_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_POW_EQUAL:op expr:value %namer AssignOp
+    | variable:target T_INC:op %namer PostIncDec
+    | T_INC:op variable:target %namer PreIncDec
+    | variable:target T_DEC:op %namer PostIncDec
+    | T_DEC:op variable:target %namer PreIncDec
+    | expr:left PLUS:op expr:right %namer Binary
+    | expr:left MINUS:op expr:right %namer Binary
+    | expr:left STAR:op expr:right %namer Binary
+    | expr:left SLASH:op expr:right %namer Binary
+    | expr:left PERCENT:op expr:right %namer Binary
+    | expr:left DOT:op expr:right %namer Binary
+    | expr:left T_POW:op expr:right %namer Binary
+    | expr:left T_SL:op expr:right %namer Binary
+    | expr:left T_SR:op expr:right %namer Binary
+    | expr:left AMP:op expr:right %namer Binary
+    | expr:left PIPE:op expr:right %namer Binary
+    | expr:left CARET:op expr:right %namer Binary
+    | expr:left T_IS_EQUAL:op expr:right %namer Binary
+    | expr:left T_IS_NOT_EQUAL:op expr:right %namer Binary
+    | expr:left T_IS_IDENTICAL:op expr:right %namer Binary
+    | expr:left T_IS_NOT_IDENTICAL:op expr:right %namer Binary
+    | expr:left T_SPACESHIP:op expr:right %namer Binary
+    | expr:left LT:op expr:right %namer Binary
+    | expr:left T_IS_SMALLER_OR_EQUAL:op expr:right %namer Binary
+    | expr:left GT:op expr:right %namer Binary
+    | expr:left T_IS_GREATER_OR_EQUAL:op expr:right %namer Binary
+    | expr:left T_BOOLEAN_AND:op expr:right %namer Binary
+    | expr:left T_BOOLEAN_OR:op expr:right %namer Binary
+    | expr:left T_LOGICAL_AND:op expr:right %namer Binary
+    | expr:left T_LOGICAL_OR:op expr:right %namer Binary
+    | expr:left T_LOGICAL_XOR:op expr:right %namer Binary
+    | expr:left T_INSTANCEOF:op class_name_reference:classRef %namer Instanceof
+    | PLUS:op expr:expr %prec T_INC %namer Unary
+    | MINUS:op expr:expr %prec T_INC %namer Unary
+    | BANG:op expr:expr %namer Unary
+    | TILDE:op expr:expr %namer Unary
+    | AT:op expr:expr %namer Unary
+    | T_INT_CAST:op expr:expr %namer Cast
+    | T_DOUBLE_CAST:op expr:expr %namer Cast
+    | T_STRING_CAST:op expr:expr %namer Cast
+    | T_ARRAY_CAST:op expr:expr %namer Cast
+    | T_OBJECT_CAST:op expr:expr %namer Cast
+    | T_BOOL_CAST:op expr:expr %namer Cast
+    | T_UNSET_CAST:op expr:expr %namer Cast
+    | LPAREN expr:expr RPAREN %namer Paren
+    | new_expr:newExpr %namer New
+    | expr:cond QUESTION expr:thenExpr COLON expr:elseExpr %namer Conditional
+    | expr:cond QUESTION COLON expr:elseExpr %namer ConditionalShort
+    | expr:left T_COALESCE:op expr:right %namer Binary
+    | internal_functions_in_yacc:func %namer InternalFunction
+    | T_EXIT exit_expr:arg %namer Exit
+    | scalar:scalar %namer Scalar
+    | BACKTICK backticks_expr:cmd BACKTICK %namer ShellExec
+    | T_PRINT expr:expr %namer Print
+    | T_YIELD:op %namer Yield
+    | T_YIELD:op expr:value %namer YieldValue
+    | T_YIELD:op expr:key T_DOUBLE_ARROW expr:value %namer YieldKV
+    | T_YIELD_FROM:op expr:expr %namer YieldFrom
+    | T_FUNCTION AMP?:returnsRef LPAREN parameter[COMMA !]*:params RPAREN lexical_vars:uses return_type:returnType LBRACE inner_statement*:stmts RBRACE %namer Closure
+    | T_STATIC:kw T_FUNCTION AMP?:returnsRef LPAREN parameter[COMMA !]*:params RPAREN lexical_vars:uses return_type:returnType LBRACE inner_statement*:stmts RBRACE %namer StaticClosure
+    ;
+
+lexical_vars ::= /* empty */
+               | T_USE LPAREN lexical_var[COMMA !]+:vars RPAREN %namer ClosureUses
+               ;
+
+lexical_var ::= T_VARIABLE:var %namer ByVal
+              | AMP T_VARIABLE:var %namer ByRef
+              ;
+
+function_call ::=
+      name:n argument_list:args %namer Call
+    | class_name:clazz T_PAAMAYIM_NEKUDOTAYIM member_name:member argument_list:args %namer StaticCall
+    | dereferencable:d T_PAAMAYIM_NEKUDOTAYIM member_name:member argument_list:args %namer StaticCallDynamic
+    | callable_expr:callee argument_list:args %namer CallDynamic
+    ;
+
+class_name ::= T_STATIC:kw %namer StaticClass
+             | name:n %namer NamedClass
+             ;
+
+class_name_reference ::= class_name:clazz %namer ClassName
+                        | new_variable:var %namer NewVariable
+                        ;
+
+exit_expr ::= /* empty */
+            | LPAREN expr?:expr RPAREN %namer ExitArgs
+            ;
+
+backticks_expr ::= /* empty */
+                 | T_ENCAPSED_AND_WHITESPACE:text %namer ShellExecText
+                 | encaps_list:list %namer ShellExecList
+                 ;
+
+dereferencable_scalar ::=
+      T_ARRAY:kw LPAREN array_pair_list:items RPAREN %namer LongArray
+    | LBRACK:kw array_pair_list:items RBRACK %namer ShortArray
+    | T_CONSTANT_ENCAPSED_STRING:str %namer ConstantString
+    ;
+
+scalar ::=
+      T_LNUMBER:num %namer Int
+    | T_DNUMBER:num %namer Float
+    | T_LINE:kw %namer MagicConst
+    | T_FILE:kw %namer MagicConst
+    | T_DIR:kw %namer MagicConst
+    | T_TRAIT_C:kw %namer MagicConst
+    | T_METHOD_C:kw %namer MagicConst
+    | T_FUNC_C:kw %namer MagicConst
+    | T_NS_C:kw %namer MagicConst
+    | T_CLASS_C:kw %namer MagicConst
+    | T_START_HEREDOC:h T_ENCAPSED_AND_WHITESPACE:text T_END_HEREDOC:e %namer Heredoc
+    | T_START_HEREDOC:h T_END_HEREDOC:e %namer EmptyHeredoc
+    | DQUOTE encaps_list:list DQUOTE %namer InterpolatedString
+    | T_START_HEREDOC:h encaps_list:list T_END_HEREDOC:e %namer InterpolatedHeredoc
+    | dereferencable_scalar:ds %namer DereferencableScalar
+    | constant:c %namer Constant
+    ;
+
+constant ::= name:n %namer NamedConstant
+           | class_name:clazz T_PAAMAYIM_NEKUDOTAYIM identifier:member %namer ClassConstant
+           | dereferencable:d T_PAAMAYIM_NEKUDOTAYIM identifier:member %namer DynamicClassConstant
+           ;
+
+expr ::= variable:v %namer VariableExpr
+       | expr_without_variable:ev %namer ExprWithoutVariable
+       ;
+
+dereferencable ::= variable:v %namer Var
+                 | LPAREN expr:e RPAREN %namer Paren
+                 | dereferencable_scalar:ds %namer Scalar
+                 ;
+
+callable_expr ::= callable_variable:cv %namer CallableVariable
+                | LPAREN expr:e RPAREN %namer Paren
+                | dereferencable_scalar:ds %namer Scalar
+                ;
+
+callable_variable ::=
+      simple_variable:sv %namer SimpleVar
+    | dereferencable:d LBRACK expr?:offset RBRACK %namer Index
+    | constant:c LBRACK expr?:offset RBRACK %namer ConstantIndex
+    | dereferencable:d LBRACE expr:e RBRACE %namer CurlyIndex
+    | dereferencable:d T_OBJECT_OPERATOR property_name:prop argument_list:args %namer MethodCall
+    | function_call:call %namer FunctionCall
+    ;
+
+variable ::= callable_variable:cv %namer CallableVariable
+           | static_member:sm %namer StaticMember
+           | dereferencable:d T_OBJECT_OPERATOR property_name:prop %namer PropertyAccess
+           ;
+
+simple_variable ::= T_VARIABLE:var %namer NamedVar
+                  | DOLLAR LBRACE expr:e RBRACE %namer IndirectVar
+                  | DOLLAR simple_variable:nested %namer NestedVar
+                  ;
+
+static_member ::= class_name:clazz T_PAAMAYIM_NEKUDOTAYIM simple_variable:var %namer StaticProperty
+                 | dereferencable:d T_PAAMAYIM_NEKUDOTAYIM simple_variable:var %namer DynamicStaticProperty
+                 ;
+
+new_variable ::=
+      simple_variable:sv %namer SimpleVar
+    | new_variable:nested LBRACK expr?:offset RBRACK %namer Index
+    | new_variable:nested LBRACE expr:e RBRACE %namer CurlyIndex
+    | new_variable:nested T_OBJECT_OPERATOR property_name:prop %namer PropertyAccess
+    | class_name:clazz T_PAAMAYIM_NEKUDOTAYIM simple_variable:var %namer StaticProperty
+    | new_variable:nested T_PAAMAYIM_NEKUDOTAYIM simple_variable:var %namer DynamicStaticProperty
+    ;
+
+member_name ::= identifier:ident %namer IdentifierName
+              | LBRACE expr:e RBRACE %namer ExpressionName
+              | simple_variable:var %namer VariableName
+              ;
+
+property_name ::= T_STRING:name %namer Name
+                | LBRACE expr:e RBRACE %namer Expression
+                | simple_variable:var %namer Variable
+                ;
+
+/* -------- 数组字面量 --------
+ * 每个槽位可空，因此 + 已能接受空数组，尾逗号对应最后一个空槽位。
+ * 使用 ! 避免再引入可选尾分隔符；* 或 [COMMA ?]+ 会与可空槽位产生二义性。 */
+array_pair_list ::= possible_array_pair[COMMA !]+:items %namer ArrayPairList;
+
+possible_array_pair ::= array_pair?:pair;
+
+array_pair ::=
+      expr:value %namer Value
+    | expr:key T_DOUBLE_ARROW expr:value %namer KeyValue
+    | expr:key T_DOUBLE_ARROW AMP variable:ref %namer KeyRefValue
+    | AMP variable:ref %namer RefValue
+    | expr:key T_DOUBLE_ARROW T_LIST LPAREN array_pair_list:items RPAREN %namer KeyListValue
+    | T_LIST LPAREN array_pair_list:items RPAREN %namer ListValue
+    ;
+
+/* -------- 字符串插值 -------- */
+
+encaps_list ::=
+      encaps_list:parts encaps_var:var %namer Append
+    | encaps_list:parts T_ENCAPSED_AND_WHITESPACE:text %namer AppendText
+    | encaps_var:v %namer Single
+    | T_ENCAPSED_AND_WHITESPACE:text encaps_var:v %namer TextAndVar
+    ;
+
+encaps_var ::=
+      T_VARIABLE:var %namer Var
+    | T_VARIABLE:var LBRACK encaps_var_offset:offset RBRACK %namer Index
+    | T_VARIABLE:var T_OBJECT_OPERATOR T_STRING:prop %namer Property
+    | T_DOLLAR_OPEN_CURLY_BRACES expr:e RBRACE %namer IndirectVar
+    | T_DOLLAR_OPEN_CURLY_BRACES T_STRING_VARNAME:name RBRACE %namer NamedIndirectVar
+    | T_DOLLAR_OPEN_CURLY_BRACES T_STRING_VARNAME:name LBRACK expr:index RBRACK RBRACE %namer NamedIndirectVarIndex
+    | T_CURLY_OPEN variable:v RBRACE %namer CurlyVar
+    ;
+
+encaps_var_offset ::= T_STRING:s %namer StringOffset
+                    | T_NUM_STRING:n %namer NumericOffset
+                    | MINUS T_NUM_STRING:n %namer NegativeNumericOffset
+                    | T_VARIABLE:v %namer VariableOffset
+                    ;
+
+/* -------- 语言内建函数 -------- */
+
+internal_functions_in_yacc ::=
+      T_ISSET LPAREN expr[COMMA !]+:vars RPAREN %namer Isset
+    | T_EMPTY:op LPAREN expr:expr RPAREN %namer IncludeOrEval
+    | T_INCLUDE:op expr:expr %namer IncludeOrEval
+    | T_INCLUDE_ONCE:op expr:expr %namer IncludeOrEval
+    | T_EVAL:op LPAREN expr:expr RPAREN %namer IncludeOrEval
+    | T_REQUIRE:op expr:expr %namer IncludeOrEval
+    | T_REQUIRE_ONCE:op expr:expr %namer IncludeOrEval
+    ;
