@@ -18,10 +18,12 @@ class SyntaxConverterTest {
     // 整数的进制、浮点数表示和字符串的前缀、引号、转义都保留原文。
     @Test
     void preservesLiteralKindsAndLexemes() {
-        for (String value : List.of("0", "42", "077", "0x2A", "0b101010", "9223372036854775807")) {
+        for (String value : List.of("0", "42", "077", "0x2A", "0b101010", "9223372036854775807",
+                "0100000000000000000000", "0" + "7".repeat(21), "0x00007FFFFFFFFFFFFFFF")) {
             assertLiteral(expression(value), LiteralKind.INTEGER, value);
         }
-        for (String value : List.of("1.0", ".5", "1e3", "9223372036854775808",
+        for (String value : List.of("1.0", ".5", "1e3", "1e309", "9223372036854775808",
+                "01" + "0".repeat(21),
                 "0xFFFFFFFFFFFFFFFF", "0b1111111111111111111111111111111111111111111111111111111111111111")) {
             assertLiteral(expression(value), LiteralKind.FLOAT, value);
         }

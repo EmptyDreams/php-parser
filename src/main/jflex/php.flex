@@ -16,7 +16,7 @@
  *
  * 已知的语义保留差异（语义层的处理属于后处理阶段）：
  * - 字符串转义序列不做解码，token 保留原始文本；
- * - T_LNUMBER / T_DNUMBER 的区分只看数值是否超出 64 位（与 zend 一致）；
+ * - 整数写法按 64 位有符号整数范围区分 T_LNUMBER / T_DNUMBER，不解析实际数值；
  * - 无法识别的字符按 zend 语义警告后跳过（zend 为 E_COMPILE_WARNING）。
  * -------------------------------------------------------------------------- */
 
@@ -165,16 +165,33 @@ import java.util.ArrayDeque;
         return tk(id);
     }
 
-    /** 数字字面量：区分 T_LNUMBER / T_DNUMBER（超出 64 位即为浮点数，与 zend 一致） */
+    /** 整数写法按 64 位有符号范围分类；只比较有效位数和字符，保留原始文本。 */
     private Symbol numberToken(int radix) {
         String text = yytext();
-        String digits = radix == 10 ? text : text.substring(2);
-        if (radix == 10 && text.length() > 1 && text.charAt(0) == '0'
-                && !text.matches("0[0-7]*")) {
-            throw new PhpLexerException("Invalid numeric literal (非法八进制): " + text, loc());
+        int start = radix == 10 ? 0 : 2;
+        if (radix == 10 && text.length() > 1 && text.charAt(0) == '0') {
+            radix = 8;
+            // LNUM 也匹配 8/9；即使长度已经超限，仍须检查整个八进制字面量。
+            for (int i = 1; i < text.length(); i++) {
+                if (text.charAt(i) > '7') {
+                    throw new PhpLexerException("Invalid numeric literal (非法八进制): " + text, loc());
+                }
+            }
         }
-        int bits = new java.math.BigInteger(digits, radix).bitLength();
-        return symbol(bits <= 63 ? PhpSymbols.T_LNUMBER : PhpSymbols.T_DNUMBER, text);
+        while (start < text.length() && text.charAt(start) == '0') {
+            start++;
+        }
+        int digits = text.length() - start;
+        boolean fitsInteger = switch (radix) {
+            case 2 -> digits <= 63;
+            case 8 -> digits <= 21;
+            // 十六进制的第 16 位只能使用 3 个有效二进制位。
+            case 16 -> digits < 16 || (digits == 16 && text.charAt(start) <= '7');
+            // 十进制分支没有前缀或前导零，可直接比较完整原文。
+            case 10 -> digits < 19 || (digits == 19 && text.compareTo("9223372036854775807") <= 0);
+            default -> throw new IllegalArgumentException("Unsupported numeric radix: " + radix);
+        };
+        return symbol(fitsInteger ? PhpSymbols.T_LNUMBER : PhpSymbols.T_DNUMBER, text);
     }
 
     private void warn(String message) {
