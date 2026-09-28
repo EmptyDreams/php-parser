@@ -1,0 +1,33 @@
+package top.kmar.php.extract;
+
+import top.kmar.php.ir.IrBlock;
+import top.kmar.php.ir.IrExpression;
+import top.kmar.php.model.SyntaxBody;
+import top.kmar.php.model.SyntaxExpression;
+
+import java.util.Objects;
+
+/**
+ * 将选定的语法体或表达式转换为独立 IR，不修改原 AST 或声明模型。
+ * <p>只支持已实现的基础子集；遇到不支持或损坏的结构抛出
+ * {@link SyntaxConversionException}，不绑定名称、不推断类型、不执行 PHP。
+ * 调用方负责保留所属声明及其命名空间、导入环境。</p>
+ */
+public final class SyntaxConverter {
+    private SyntaxConverter() {
+    }
+
+    /** 转换完整的选定语句序列；传入值不能为 null。 */
+    public static IrBlock convertBody(SyntaxBody body) {
+        Objects.requireNonNull(body, "body");
+        var context = new ConversionContext(body.source().sourceId());
+        return new StatementConverter(context).body(body);
+    }
+
+    /** 转换一个表达式；缺省默认值等应由调用方先判空。 */
+    public static IrExpression convertExpression(SyntaxExpression expression) {
+        Objects.requireNonNull(expression, "expression");
+        var context = new ConversionContext(expression.source().sourceId());
+        return new ExpressionConverter(context).convert(expression.syntax(), "expression");
+    }
+}
