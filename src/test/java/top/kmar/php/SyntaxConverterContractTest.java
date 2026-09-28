@@ -61,13 +61,15 @@ class SyntaxConverterContractTest {
         IrBlock block = SyntaxConverter.convertBody(function.body());
         assertEquals(function.body().source(), block.source());
         assertAllSourceIds(block, "memory:source.php");
-        NodeExpr expression = parsedExpression("$value + 2");
-        IrBinary binary = assertInstanceOf(IrBinary.class, SyntaxConverter.convertExpression(
-                new SyntaxExpression(expression, new SourceInfo("expression.php", null))));
-        NodeExprWithoutVariable original = expression.getEv();
-        assertEquals(sourceRange(original.getLeft()), binary.left().source().range());
-        assertEquals(sourceRange(original.getRight()), binary.right().source().range());
-        assertAllSourceIds(binary, "expression.php");
+        for (String number : List.of("2", "1.25")) {
+            NodeExpr expression = parsedExpression("$value + " + number);
+            IrBinary binary = assertInstanceOf(IrBinary.class, SyntaxConverter.convertExpression(
+                    new SyntaxExpression(expression, new SourceInfo("expression.php", null))));
+            NodeExprWithoutVariable original = expression.getEv();
+            assertEquals(sourceRange(original.getLeft()), binary.left().source().range());
+            assertEquals(sourceRange(original.getRight()), binary.right().source().range());
+            assertAllSourceIds(binary, "expression.php");
+        }
     }
 
     // 未知位置不猜测成有效范围；合法零宽位置仍应保留，来源标识可以独立缺省。
@@ -175,7 +177,7 @@ class SyntaxConverterContractTest {
         assertThrows(UnsupportedOperationException.class, block.statements()::clear);
 
         var expressions = new ArrayList<IrExpression>();
-        expressions.add(new IrLiteral(LiteralKind.INTEGER, "1", source));
+        expressions.add(new IrIntegerLiteral(1, source));
         var echo = new IrEcho(expressions, source);
         var call = new IrCall(new NameReference("f", NameForm.UNQUALIFIED, source), expressions, source);
         expressions.clear();
@@ -197,7 +199,7 @@ class SyntaxConverterContractTest {
     void producesAstFreeResultsWithoutMutatingInput() throws ReflectiveOperationException {
         NodeProgram parsed = (NodeProgram) Main.parse("""
                 <?php function f($a) {
-                    $value = $a + 2;
+                    $value = $a + 0x2A + 1.25;
                     if ($value) echo call($value, FLAG); else return null;
                     return $value ?? other() ?: 3;
                 }
@@ -232,8 +234,8 @@ class SyntaxConverterContractTest {
         assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(bad.body()));
         IrBlock result = SyntaxConverter.convertBody(good.body());
         assertEquals(1, result.statements().size());
-        assertEquals("3", assertInstanceOf(IrLiteral.class,
-                assertInstanceOf(IrReturn.class, result.statements().getFirst()).value()).lexeme());
+        assertEquals(3, assertInstanceOf(IrIntegerLiteral.class,
+                assertInstanceOf(IrReturn.class, result.statements().getFirst()).value()).value());
         assertEquals(before, file.syntax().toTreeString(false));
     }
 

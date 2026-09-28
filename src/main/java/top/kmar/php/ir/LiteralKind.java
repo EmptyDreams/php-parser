@@ -1,6 +1,6 @@
 package top.kmar.php.ir;
 
-/** 字面量种类；FLOAT 沿用词法分析器的分类，不通过解析原文重新判定。 */
+/** 仍保留原始文本的非数值字面量种类；数值由独立的强类型节点表示。 */
 public enum LiteralKind {
-    INTEGER, FLOAT, STRING, BOOLEAN, NULL
+    STRING, BOOLEAN, NULL
 }

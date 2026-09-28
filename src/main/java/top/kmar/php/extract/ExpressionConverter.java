@@ -10,12 +10,14 @@ import java.util.ArrayList;
 import java.util.Locale;
 import java.util.Objects;
 
-/** 将支持的表达式转换为基础 IR；保留 AST 分组，不求值、不解码字面量或绑定名称。 */
+/** 将支持的表达式转换为基础 IR；解码数值并保留 AST 分组，不求值或绑定名称。 */
 final class ExpressionConverter {
     private final ConversionContext context;
+    private final NumericLiteralDecoder numbers;
 
     ExpressionConverter(ConversionContext context) {
         this.context = Objects.requireNonNull(context, "context");
+        this.numbers = new NumericLiteralDecoder(context);
     }
 
     IrExpression convert(AstNode node, String path) {
@@ -128,10 +130,8 @@ final class ExpressionConverter {
 
     private IrExpression scalar(NodeScalar node, String path) {
         return switch (node) {
-            case NodeScalar.Int ignored -> new IrLiteral(LiteralKind.INTEGER,
-                    context.text(node.getNum(), node, path + ".num"), context.source(node));
-            case NodeScalar.Float ignored -> new IrLiteral(LiteralKind.FLOAT,
-                    context.text(node.getNum(), node, path + ".num"), context.source(node));
+            case NodeScalar.Int ignored -> numbers.convert(node, path);
+            case NodeScalar.Float ignored -> numbers.convert(node, path);
             case NodeScalar.DereferencableScalar ignored -> stringLiteral(
                     context.required(node.getDs(), node, path + ".ds"), path + ".ds");
             case NodeScalar.Constant ignored -> constant(

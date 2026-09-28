@@ -11,6 +11,7 @@ import java.util.Objects;
  * 将选定的语法体或表达式转换为独立 IR，不修改原 AST 或声明模型。
  * <p>只支持已实现的基础子集；遇到不支持或损坏的结构抛出
  * {@link SyntaxConversionException}，不绑定名称、不推断类型、不执行 PHP。
+ * 数字字面量在转换时按 64 位 PHP 7.2 的规则解码为 long/double，原文仍保留在 AST 中。
  * 调用方负责保留所属声明及其命名空间、导入环境。</p>
  */
 public final class SyntaxConverter {

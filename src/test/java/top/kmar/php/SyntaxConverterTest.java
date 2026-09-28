@@ -12,21 +12,30 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 从真实 PHP 语法树验证基础语句／表达式转换，不在转换阶段求值或绑定名称。 */
+/** 从真实 PHP 语法树验证基础语句／表达式转换，解码数值但不执行表达式或绑定名称。 */
 class SyntaxConverterTest {
 
-    // 整数的进制、浮点数表示和字符串的前缀、引号、转义都保留原文。
+    // 不同进制的整数与十进制浮点数统一解码，数值节点不再依赖原文表示。
     @Test
-    void preservesLiteralKindsAndLexemes() {
-        for (String value : List.of("0", "42", "077", "0x2A", "0b101010", "9223372036854775807",
-                "0100000000000000000000", "0" + "7".repeat(21), "0x00007FFFFFFFFFFFFFFF")) {
-            assertLiteral(expression(value), LiteralKind.INTEGER, value);
-        }
-        for (String value : List.of("1.0", ".5", "1e3", "1e309", "9223372036854775808",
-                "01" + "0".repeat(21),
-                "0xFFFFFFFFFFFFFFFF", "0b1111111111111111111111111111111111111111111111111111111111111111")) {
-            assertLiteral(expression(value), LiteralKind.FLOAT, value);
-        }
+    void decodesNumericLiteralsIntoTypedValues() {
+        Map<String, Long> integers = Map.ofEntries(
+                Map.entry("0", 0L), Map.entry("42", 42L), Map.entry("077", 63L),
+                Map.entry("0x2A", 42L), Map.entry("0b101010", 42L),
+                Map.entry("9223372036854775807", Long.MAX_VALUE),
+                Map.entry("0100000000000000000000", 0100000000000000000000L),
+                Map.entry("0" + "7".repeat(21), Long.MAX_VALUE),
+                Map.entry("0x00007FFFFFFFFFFFFFFF", Long.MAX_VALUE));
+        integers.forEach((lexeme, value) -> assertInteger(expression(lexeme), value));
+        Map<String, Double> floats = Map.of(
+                "1.0", 1.0, ".5", 0.5, "1e3", 1000.0, "1e309", Double.POSITIVE_INFINITY,
+                "9223372036854775808", 0x1.0p63, "0x10000000000000000", 0x1.0p64);
+        floats.forEach((lexeme, value) ->
+                assertEquals(value.doubleValue(), assertInstanceOf(IrFloatLiteral.class, expression(lexeme)).value(), lexeme));
+    }
+
+    // 非数值字符串仍保留前缀、引号与转义，不在这一阶段解码字符串。
+    @Test
+    void preservesStringLiteralLexemes() {
         for (String value : List.of("'text'", "\"text\"", "'a\\'b'", "\"a\\n\\t\"", "b'raw'", "B\"raw\"")) {
             assertLiteral(expression(value), LiteralKind.STRING, value);
         }
@@ -58,7 +67,7 @@ class SyntaxConverterTest {
         assertEquals("a", assertInstanceOf(IrVariableTarget.class, outer.target()).name());
         IrAssignment inner = assertInstanceOf(IrAssignment.class, outer.value());
         assertEquals("b", assertInstanceOf(IrVariableTarget.class, inner.target()).name());
-        assertLiteral(inner.value(), LiteralKind.INTEGER, "3");
+        assertInteger(inner.value(), 3);
     }
 
     // 前缀运算符独立建模，不把负数折叠成数值字面量，也不丢弃运算次序。
@@ -73,7 +82,7 @@ class SyntaxConverterTest {
             assertEquals("a", assertInstanceOf(IrVariable.class, unary.operand()).name());
         });
         IrUnary minus = assertInstanceOf(IrUnary.class, expression("-42"));
-        assertLiteral(minus.operand(), LiteralKind.INTEGER, "42");
+        assertInteger(minus.operand(), 42);
         IrUnary nested = assertInstanceOf(IrUnary.class, expression("!-+$a"));
         assertEquals(UnaryOperator.NOT, nested.operator());
         assertEquals(UnaryOperator.MINUS, assertInstanceOf(IrUnary.class, nested.operand()).operator());
@@ -166,7 +175,7 @@ class SyntaxConverterTest {
             assertEquals(form, call.name().form());
             assertEquals(3, call.arguments().size());
             assertEquals("a", assertInstanceOf(IrVariable.class, call.arguments().getFirst()).name());
-            assertLiteral(call.arguments().get(1), LiteralKind.INTEGER, "2");
+            assertInteger(call.arguments().get(1), 2);
             assertTrue(assertInstanceOf(IrCall.class, call.arguments().get(2)).arguments().isEmpty());
         });
     }
@@ -182,7 +191,7 @@ class SyntaxConverterTest {
         assertEquals(3, echo.expressions().size());
         assertEquals("a", assertInstanceOf(IrVariable.class, echo.expressions().getFirst()).name());
         assertLiteral(echo.expressions().get(1), LiteralKind.STRING, "'next'");
-        assertLiteral(echo.expressions().get(2), LiteralKind.INTEGER, "3");
+        assertInteger(echo.expressions().get(2), 3);
         assertNull(assertInstanceOf(IrReturn.class, block.statements().get(2)).value());
         assertLiteral(assertInstanceOf(IrReturn.class, block.statements().get(3)).value(), LiteralKind.NULL, "null");
         assertTrue(assertInstanceOf(IrBlock.class, block.statements().get(4)).statements().isEmpty());
@@ -200,12 +209,11 @@ class SyntaxConverterTest {
                     .map(branch -> assertInstanceOf(IrVariable.class, branch.condition()).name()).toList());
             for (int i = 0; i < 2; i++) {
                 IrEcho echo = assertInstanceOf(IrEcho.class, conditional.branches().get(i).body().statements().getFirst());
-                assertLiteral(echo.expressions().getFirst(), LiteralKind.INTEGER, Integer.toString(i + 1));
+                assertInteger(echo.expressions().getFirst(), i + 1);
             }
             assertInstanceOf(IrEmpty.class, conditional.branches().get(2).body().statements().getFirst());
             assertNotNull(conditional.elseBlock());
-            assertLiteral(assertInstanceOf(IrReturn.class, conditional.elseBlock().statements().getFirst()).value(),
-                    LiteralKind.INTEGER, "3");
+            assertInteger(assertInstanceOf(IrReturn.class, conditional.elseBlock().statements().getFirst()).value(), 3);
         }
     }
 
@@ -257,7 +265,7 @@ class SyntaxConverterTest {
         PropertyDefinition property = assertInstanceOf(PropertyDefinition.class, type.members().getFirst());
         assertInstanceOf(IrBinary.class, SyntaxConverter.convertExpression(property.initialValue()));
         ClassConstantDefinition constant = assertInstanceOf(ClassConstantDefinition.class, type.members().get(1));
-        assertLiteral(SyntaxConverter.convertExpression(constant.value()), LiteralKind.INTEGER, "3");
+        assertInteger(SyntaxConverter.convertExpression(constant.value()), 3);
         MethodDefinition method = assertInstanceOf(MethodDefinition.class, type.members().get(2));
         assertEquals(1, SyntaxConverter.convertBody(method.body()).statements().size());
         FunctionDefinition unrelated = assertInstanceOf(FunctionDefinition.class, declarations.get(1));
@@ -329,6 +337,10 @@ class SyntaxConverterTest {
         IrLiteral literal = assertInstanceOf(IrLiteral.class, actual);
         assertEquals(kind, literal.kind());
         assertEquals(lexeme, literal.lexeme());
+    }
+
+    private static void assertInteger(IrExpression actual, long value) {
+        assertEquals(value, assertInstanceOf(IrIntegerLiteral.class, actual).value());
     }
 
     private static void assertConstant(String spelling, NameForm form) {
