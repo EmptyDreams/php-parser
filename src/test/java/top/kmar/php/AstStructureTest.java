@@ -200,6 +200,87 @@ class AstStructureTest {
         }
     }
 
+    // PHP 7.2 文法的一元正负号使用 T_INC 优先级，低于幂；括号可以改变分组。
+    @Test
+    void exponentiationBindsBeforeUnarySignsUnlessParenthesized() {
+        for (String sign : List.of("+", "-")) {
+            AstNode unary = value(expression(sign + "2 ** 3"));
+            assertEquals(sign, text(child(unary, "op")));
+            AstNode power = binary(child(unary, "expr"), "**");
+            assertEquals("2", number(child(power, "left")));
+            assertEquals("3", number(child(power, "right")));
+
+            AstNode groupedPower = binary(expression("(" + sign + "2) ** 3"), "**");
+            AstNode parentheses = assertInstanceOf(NodeExprWithoutVariable.Paren.class,
+                    value(child(groupedPower, "left")));
+            AstNode groupedUnary = value(child(parentheses, "expr"));
+            assertEquals(sign, text(child(groupedUnary, "op")));
+            assertEquals("2", number(child(groupedUnary, "expr")));
+            assertEquals("3", number(child(groupedPower, "right")));
+        }
+    }
+
+    // 赋值左侧必须是变量，因此连续赋值右嵌套；and/or 比赋值低，&&/|| 比赋值高。
+    @Test
+    void assignmentsNestRightBetweenKeywordAndSymbolicLogicalPrecedence() {
+        AstNode keywordOr = binary(expression("$a = $b = 1 and 2 or 3"), "or");
+        assertEquals("3", number(child(keywordOr, "right")));
+        AstNode keywordAnd = binary(child(keywordOr, "left"), "and");
+        assertEquals("2", number(child(keywordAnd, "right")));
+        AstNode outerAssignment = assignment(child(keywordAnd, "left"), "a");
+        AstNode innerAssignment = assignment(child(outerAssignment, "value"), "b");
+        assertEquals("1", number(child(innerAssignment, "value")));
+
+        AstNode symbolicAssignment = assignment(expression("$a = 1 && 2 || 3"), "a");
+        AstNode symbolicOr = binary(child(symbolicAssignment, "value"), "||");
+        assertEquals("3", number(child(symbolicOr, "right")));
+        AstNode symbolicAnd = binary(child(symbolicOr, "left"), "&&");
+        assertEquals("1", number(child(symbolicAnd, "left")));
+        assertEquals("2", number(child(symbolicAnd, "right")));
+    }
+
+    // PHP 7.2 的点号与加减同级左结合，不能套用 PHP 8 降低拼接优先级后的规则。
+    @Test
+    void php72ConcatenationSharesLeftAssociativityWithAdditionAndSubtraction() {
+        for (String operator : List.of("+", "-")) {
+            AstNode arithmetic = binary(expression("1 . 2 " + operator + " 3"), operator);
+            AstNode leftConcat = binary(child(arithmetic, "left"), ".");
+            assertEquals("1", number(child(leftConcat, "left")));
+            assertEquals("2", number(child(leftConcat, "right")));
+            assertEquals("3", number(child(arithmetic, "right")));
+
+            AstNode concat = binary(expression("1 " + operator + " 2 . 3"), ".");
+            AstNode leftArithmetic = binary(child(concat, "left"), operator);
+            assertEquals("1", number(child(leftArithmetic, "left")));
+            assertEquals("2", number(child(leftArithmetic, "right")));
+            assertEquals("3", number(child(concat, "right")));
+        }
+    }
+
+    // 空合并优先于三元运算；显式括号允许三元运算嵌套在 else 分支，而非默认左结合。
+    @Test
+    void coalescingBindsBeforeTernaryAndParenthesesPreserveNestedElseBranches() {
+        AstNode conditional = assertInstanceOf(NodeExprWithoutVariable.Conditional.class,
+                value(expression("1 ?? 2 ? 3 : 4")));
+        AstNode coalesce = binary(child(conditional, "cond"), "??");
+        assertEquals("1", number(child(coalesce, "left")));
+        assertEquals("2", number(child(coalesce, "right")));
+        assertEquals("3", number(child(conditional, "thenExpr")));
+        assertEquals("4", number(child(conditional, "elseExpr")));
+
+        AstNode outer = assertInstanceOf(NodeExprWithoutVariable.Conditional.class,
+                value(expression("1 ? 2 : (3 ? 4 : 5)")));
+        assertEquals("1", number(child(outer, "cond")));
+        assertEquals("2", number(child(outer, "thenExpr")));
+        AstNode parentheses = assertInstanceOf(NodeExprWithoutVariable.Paren.class,
+                value(child(outer, "elseExpr")));
+        AstNode inner = assertInstanceOf(NodeExprWithoutVariable.Conditional.class,
+                value(child(parentheses, "expr")));
+        assertEquals("3", number(child(inner, "cond")));
+        assertEquals("4", number(child(inner, "thenExpr")));
+        assertEquals("5", number(child(inner, "elseExpr")));
+    }
+
     // 验证 PHP 7.2 三元运算左结合，短三元运算没有中间表达式字段。
     @Test
     void php72TernariesAssociateLeftAndShortTernariesOmitTheMiddleField() {
@@ -244,6 +325,19 @@ class AstStructureTest {
 
     private static AstNode value(AstNode expression) {
         return child(expression, "ev");
+    }
+
+    private static AstNode binary(AstNode expression, String operator) {
+        AstNode binary = assertInstanceOf(NodeExprWithoutVariable.Binary.class, value(expression));
+        assertEquals(operator, text(child(binary, "op")));
+        return binary;
+    }
+
+    private static AstNode assignment(AstNode expression, String variableName) {
+        AstNode assignment = assertInstanceOf(NodeExprWithoutVariable.Assign.class, value(expression));
+        AstNode target = child(assignment, "target");
+        assertEquals(variableName, text(child(child(child(target, "cv"), "sv"), "var")));
+        return assignment;
     }
 
     private static String number(AstNode expression) {

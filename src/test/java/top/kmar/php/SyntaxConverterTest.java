@@ -85,7 +85,11 @@ class SyntaxConverterTest {
         assertInteger(minus.operand(), 42);
         IrUnary nested = assertInstanceOf(IrUnary.class, expression("!-+$a"));
         assertEquals(UnaryOperator.NOT, nested.operator());
-        assertEquals(UnaryOperator.MINUS, assertInstanceOf(IrUnary.class, nested.operand()).operator());
+        IrUnary nestedMinus = assertInstanceOf(IrUnary.class, nested.operand());
+        assertEquals(UnaryOperator.MINUS, nestedMinus.operator());
+        IrUnary nestedPlus = assertInstanceOf(IrUnary.class, nestedMinus.operand());
+        assertEquals(UnaryOperator.PLUS, nestedPlus.operator());
+        assertVariable(nestedPlus.operand(), "a");
     }
 
     // 二元运算符统一为枚举，比较别名及关键字大小写不产生不同语义操作。
@@ -117,15 +121,33 @@ class SyntaxConverterTest {
     void preservesPrecedenceAndAssociativityAfterRemovingParentheses() {
         IrBinary sum = assertInstanceOf(IrBinary.class, expression("$a + $b * $c"));
         assertEquals(BinaryOperator.ADD, sum.operator());
-        assertEquals(BinaryOperator.MULTIPLY, assertInstanceOf(IrBinary.class, sum.right()).operator());
+        assertVariable(sum.left(), "a");
+        IrBinary rightProduct = assertInstanceOf(IrBinary.class, sum.right());
+        assertEquals(BinaryOperator.MULTIPLY, rightProduct.operator());
+        assertVariable(rightProduct.left(), "b");
+        assertVariable(rightProduct.right(), "c");
         IrBinary product = assertInstanceOf(IrBinary.class, expression("($a + $b) * $c"));
         assertEquals(BinaryOperator.MULTIPLY, product.operator());
-        assertEquals(BinaryOperator.ADD, assertInstanceOf(IrBinary.class, product.left()).operator());
+        IrBinary leftSum = assertInstanceOf(IrBinary.class, product.left());
+        assertEquals(BinaryOperator.ADD, leftSum.operator());
+        assertVariable(leftSum.left(), "a");
+        assertVariable(leftSum.right(), "b");
+        assertVariable(product.right(), "c");
         IrBinary subtraction = assertInstanceOf(IrBinary.class, expression("$a - $b - $c"));
-        assertEquals(BinaryOperator.SUBTRACT, assertInstanceOf(IrBinary.class, subtraction.left()).operator());
+        assertEquals(BinaryOperator.SUBTRACT, subtraction.operator());
+        IrBinary leftSubtraction = assertInstanceOf(IrBinary.class, subtraction.left());
+        assertEquals(BinaryOperator.SUBTRACT, leftSubtraction.operator());
+        assertVariable(leftSubtraction.left(), "a");
+        assertVariable(leftSubtraction.right(), "b");
+        assertVariable(subtraction.right(), "c");
         IrBinary power = assertInstanceOf(IrBinary.class, expression("$a ** $b ** $c"));
-        assertEquals(BinaryOperator.POWER, assertInstanceOf(IrBinary.class, power.right()).operator());
-        assertInstanceOf(IrVariable.class, expression("((($a)))"));
+        assertEquals(BinaryOperator.POWER, power.operator());
+        assertVariable(power.left(), "a");
+        IrBinary rightPower = assertInstanceOf(IrBinary.class, power.right());
+        assertEquals(BinaryOperator.POWER, rightPower.operator());
+        assertVariable(rightPower.left(), "b");
+        assertVariable(rightPower.right(), "c");
+        assertVariable(expression("((($a)))"), "a");
     }
 
     // &&/and 与 ||/or 都标记短路，但归一化操作符不得改变各自的赋值优先级。
@@ -134,10 +156,14 @@ class SyntaxConverterTest {
         for (String token : List.of("&&", "and", "AnD")) {
             IrLogical value = assertInstanceOf(IrLogical.class, expression("$a " + token + " $b"));
             assertEquals(LogicalOperator.AND, value.operator());
+            assertVariable(value.left(), "a");
+            assertVariable(value.right(), "b");
         }
         for (String token : List.of("||", "or", "OR")) {
             IrLogical value = assertInstanceOf(IrLogical.class, expression("$a " + token + " $b"));
             assertEquals(LogicalOperator.OR, value.operator());
+            assertVariable(value.left(), "a");
+            assertVariable(value.right(), "b");
         }
         IrAssignment assignment = assertInstanceOf(IrAssignment.class, expression("$a = $b && $c"));
         assertInstanceOf(IrLogical.class, assignment.value());
@@ -145,22 +171,48 @@ class SyntaxConverterTest {
         assertInstanceOf(IrAssignment.class, keyword.left());
     }
 
+    // 混用赋值、符号逻辑与关键字逻辑时，调用必须留在各自短路分支，不能提前提取或交换。
+    @Test
+    void preservesAssignmentAndNestedShortCircuitCallStructure() {
+        IrLogical outer = assertInstanceOf(IrLogical.class,
+                expression("$saved = first() || second() && third() or fallback()"));
+        assertEquals(LogicalOperator.OR, outer.operator());
+        IrAssignment assignment = assertInstanceOf(IrAssignment.class, outer.left());
+        assertEquals("saved", assertInstanceOf(IrVariableTarget.class, assignment.target()).name());
+        IrLogical disjunction = assertInstanceOf(IrLogical.class, assignment.value());
+        assertEquals(LogicalOperator.OR, disjunction.operator());
+        assertEmptyCall(disjunction.left(), "first");
+        IrLogical conjunction = assertInstanceOf(IrLogical.class, disjunction.right());
+        assertEquals(LogicalOperator.AND, conjunction.operator());
+        assertEmptyCall(conjunction.left(), "second");
+        assertEmptyCall(conjunction.right(), "third");
+        assertEmptyCall(outer.right(), "fallback");
+    }
+
     // 空合并使用独立节点保持右结合；短三元省略中间值，避免把条件表达式复制执行。
     @Test
     void modelsCoalescingAndBothConditionalForms() {
         IrCoalesce coalesce = assertInstanceOf(IrCoalesce.class, expression("$a ?? $b ?? $c"));
-        assertInstanceOf(IrCoalesce.class, coalesce.right());
+        assertVariable(coalesce.left(), "a");
+        IrCoalesce right = assertInstanceOf(IrCoalesce.class, coalesce.right());
+        assertVariable(right.left(), "b");
+        assertVariable(right.right(), "c");
         IrConditional full = assertInstanceOf(IrConditional.class, expression("$a ? $b : $c"));
         assertEquals("a", assertInstanceOf(IrVariable.class, full.condition()).name());
         assertEquals("b", assertInstanceOf(IrVariable.class, full.thenExpression()).name());
         assertEquals("c", assertInstanceOf(IrVariable.class, full.elseExpression()).name());
         IrConditional shortForm = assertInstanceOf(IrConditional.class, expression("nextValue() ?: fallback()"));
-        assertEquals("nextValue", assertInstanceOf(IrCall.class, shortForm.condition()).name().spelling());
+        assertEmptyCall(shortForm.condition(), "nextValue");
         assertNull(shortForm.thenExpression());
-        assertEquals("fallback", assertInstanceOf(IrCall.class, shortForm.elseExpression()).name().spelling());
+        assertEmptyCall(shortForm.elseExpression(), "fallback");
         IrConditional leftAssociative = assertInstanceOf(IrConditional.class,
                 expression("$a ? $b : $c ? $d : $e"));
-        assertInstanceOf(IrConditional.class, leftAssociative.condition());
+        IrConditional left = assertInstanceOf(IrConditional.class, leftAssociative.condition());
+        assertVariable(left.condition(), "a");
+        assertVariable(left.thenExpression(), "b");
+        assertVariable(left.elseExpression(), "c");
+        assertVariable(leftAssociative.thenExpression(), "d");
+        assertVariable(leftAssociative.elseExpression(), "e");
     }
 
     // 具名调用保留限定形式和实参顺序，空参数列表与嵌套调用均可转换。
@@ -176,8 +228,27 @@ class SyntaxConverterTest {
             assertEquals(3, call.arguments().size());
             assertEquals("a", assertInstanceOf(IrVariable.class, call.arguments().getFirst()).name());
             assertInteger(call.arguments().get(1), 2);
-            assertTrue(assertInstanceOf(IrCall.class, call.arguments().get(2)).arguments().isEmpty());
+            assertEmptyCall(call.arguments().get(2), "nested");
         });
+    }
+
+    // 含赋值和嵌套调用的实参保持源码顺序及归属，后续变量读取不能被替换成赋值表达式。
+    @Test
+    void preservesAssignmentsWithinOrderedCallArguments() {
+        IrCall call = assertInstanceOf(IrCall.class,
+                expression("dispatch($a = first(), second($b = third()), $a)"));
+        assertEquals("dispatch", call.name().spelling());
+        assertEquals(3, call.arguments().size());
+        IrAssignment first = assertInstanceOf(IrAssignment.class, call.arguments().getFirst());
+        assertEquals("a", assertInstanceOf(IrVariableTarget.class, first.target()).name());
+        assertEmptyCall(first.value(), "first");
+        IrCall second = assertInstanceOf(IrCall.class, call.arguments().get(1));
+        assertEquals("second", second.name().spelling());
+        assertEquals(1, second.arguments().size());
+        IrAssignment nested = assertInstanceOf(IrAssignment.class, second.arguments().getFirst());
+        assertEquals("b", assertInstanceOf(IrVariableTarget.class, nested.target()).name());
+        assertEmptyCall(nested.value(), "third");
+        assertVariable(call.arguments().get(2), "a");
     }
 
     // return 无值与返回 null 分开表示；echo 参数、表达式语句、块及空语句保持顺序。
@@ -238,9 +309,79 @@ class SyntaxConverterTest {
     void preservesDanglingElseOwnership() {
         IrIf outer = assertInstanceOf(IrIf.class,
                 body("if ($a) if ($b) echo 1; else echo 2;").statements().getFirst());
+        assertEquals(1, outer.branches().size());
+        assertVariable(outer.branches().getFirst().condition(), "a");
         assertNull(outer.elseBlock());
+        assertEquals(1, outer.branches().getFirst().body().statements().size());
         IrIf inner = assertInstanceOf(IrIf.class, outer.branches().getFirst().body().statements().getFirst());
-        assertNotNull(inner.elseBlock());
+        assertEquals(1, inner.branches().size());
+        assertVariable(inner.branches().getFirst().condition(), "b");
+        assertEchoValues(inner.branches().getFirst().body(), 1);
+        assertEchoValues(inner.elseBlock(), 2);
+    }
+
+    // 普通与冒号式分支中的多条语句、内层 if 和分支后的语句都必须保留原有层次与顺序。
+    @Test
+    void preservesNestedBranchesAndFollowingStatementOrder() {
+        for (String code : List.of("""
+                if ($a) {
+                    if ($b) echo 1; else echo 2;
+                    echo 3;
+                } elseif ($c) {
+                    echo 4; echo 5;
+                } else {
+                    echo 6;
+                }
+                echo 7;
+                """, """
+                if ($a):
+                    if ($b): echo 1; else: echo 2; endif;
+                    echo 3;
+                elseif ($c):
+                    echo 4; echo 5;
+                else:
+                    echo 6;
+                endif;
+                echo 7;
+                """)) {
+            IrBlock block = body(code);
+            assertEquals(2, block.statements().size());
+            IrIf outer = assertInstanceOf(IrIf.class, block.statements().getFirst());
+            assertEquals(2, outer.branches().size());
+            IrIfBranch first = outer.branches().getFirst();
+            assertVariable(first.condition(), "a");
+            assertEquals(2, first.body().statements().size());
+            IrIf inner = assertInstanceOf(IrIf.class, first.body().statements().getFirst());
+            assertEquals(1, inner.branches().size());
+            assertVariable(inner.branches().getFirst().condition(), "b");
+            assertEchoValues(inner.branches().getFirst().body(), 1);
+            assertEchoValues(inner.elseBlock(), 2);
+            assertEchoValue(first.body().statements().get(1), 3);
+            assertVariable(outer.branches().get(1).condition(), "c");
+            assertEchoValues(outer.branches().get(1).body(), 4, 5);
+            assertEchoValues(outer.elseBlock(), 6);
+            assertEchoValue(block.statements().get(1), 7);
+        }
+    }
+
+    // else if 是 else 块内的嵌套 if，不可与同一 if 的 elseif 分支链混淆。
+    @Test
+    void keepsElseIfStatementNestedInsideElseBlock() {
+        IrBlock block = body("if ($a) echo 1; elseif ($b) echo 2; else if ($c) echo 3; else echo 4;");
+        assertEquals(1, block.statements().size());
+        IrIf outer = assertInstanceOf(IrIf.class, block.statements().getFirst());
+        assertEquals(2, outer.branches().size());
+        assertVariable(outer.branches().getFirst().condition(), "a");
+        assertEchoValues(outer.branches().getFirst().body(), 1);
+        assertVariable(outer.branches().get(1).condition(), "b");
+        assertEchoValues(outer.branches().get(1).body(), 2);
+        assertNotNull(outer.elseBlock());
+        assertEquals(1, outer.elseBlock().statements().size());
+        IrIf nested = assertInstanceOf(IrIf.class, outer.elseBlock().statements().getFirst());
+        assertEquals(1, nested.branches().size());
+        assertVariable(nested.branches().getFirst().condition(), "c");
+        assertEchoValues(nested.branches().getFirst().body(), 3);
+        assertEchoValues(nested.elseBlock(), 4);
     }
 
     // 阶段一公开的函数体、方法体和默认值／初始化值均可按需转换，不要求转换整个文件。
@@ -341,6 +482,31 @@ class SyntaxConverterTest {
 
     private static void assertInteger(IrExpression actual, long value) {
         assertEquals(value, assertInstanceOf(IrIntegerLiteral.class, actual).value());
+    }
+
+    private static void assertVariable(IrExpression actual, String name) {
+        assertEquals(name, assertInstanceOf(IrVariable.class, actual).name());
+    }
+
+    private static void assertEmptyCall(IrExpression actual, String name) {
+        IrCall call = assertInstanceOf(IrCall.class, actual);
+        assertEquals(name, call.name().spelling());
+        assertEquals(NameForm.UNQUALIFIED, call.name().form());
+        assertTrue(call.arguments().isEmpty());
+    }
+
+    private static void assertEchoValue(IrStatement actual, long value) {
+        IrEcho echo = assertInstanceOf(IrEcho.class, actual);
+        assertEquals(1, echo.expressions().size());
+        assertInteger(echo.expressions().getFirst(), value);
+    }
+
+    private static void assertEchoValues(IrBlock block, long... values) {
+        assertNotNull(block);
+        assertEquals(values.length, block.statements().size());
+        for (int i = 0; i < values.length; i++) {
+            assertEchoValue(block.statements().get(i), values[i]);
+        }
     }
 
     private static void assertConstant(String spelling, NameForm form) {

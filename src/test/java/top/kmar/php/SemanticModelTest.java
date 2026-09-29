@@ -190,6 +190,96 @@ class SemanticModelTest {
         assertTrue(plain.body().statements().isEmpty());
     }
 
+    // 引用与可变参数标记可以同时出现，函数和方法的默认值必须对应到原参数位置。
+    @Test
+    void keepsCombinedParameterFlagsAndDefaultsAlignedInFunctionsAndMethods() {
+        List<TopLevelDeclaration> declarations = extract("""
+                function &collect(?Foo &$input, $count = 7, $limit = 11, &...$rest): ?Foo {}
+                class Collector {
+                    public function &collect(?Foo &$input, $count = 7, $limit = 11, &...$rest): ?Foo {}
+                }
+                """).namespaceSections().getFirst().declarations();
+        FunctionDefinition function = assertInstanceOf(FunctionDefinition.class, declarations.getFirst());
+        ClassLikeDefinition type = assertInstanceOf(ClassLikeDefinition.class, declarations.get(1));
+        MethodDefinition method = assertInstanceOf(MethodDefinition.class, type.members().getFirst());
+        for (FunctionSignature signature : List.of(function.signature(), method.signature())) {
+            assertEquals("collect", signature.name());
+            assertTrue(signature.returnsReference());
+            List<ParameterDefinition> parameters = signature.parameters();
+            assertEquals(List.of("input", "count", "limit", "rest"),
+                    parameters.stream().map(ParameterDefinition::name).toList());
+            assertEquals(List.of(true, false, false, true),
+                    parameters.stream().map(ParameterDefinition::byReference).toList());
+            assertEquals(List.of(false, false, false, true),
+                    parameters.stream().map(ParameterDefinition::variadic).toList());
+            assertType(parameters.getFirst().declaredType(), "Foo", NameForm.UNQUALIFIED, true);
+            for (int i : List.of(1, 2, 3)) assertNull(parameters.get(i).declaredType());
+            assertNull(parameters.getFirst().defaultValue());
+            assertIntegerSyntax(parameters.get(1).defaultValue(), "7");
+            assertIntegerSyntax(parameters.get(2).defaultValue(), "11");
+            assertNull(parameters.get(3).defaultValue());
+            assertType(signature.returnType(), "Foo", NameForm.UNQUALIFIED, true);
+        }
+    }
+
+    // 不同命名空间中的同名类型和成员各有归属；方法内声明保留在方法体，不进入顶层索引。
+    @Test
+    void keepsSameNamedTypesAndMembersWithinTheirNamespaceOwners() {
+        PhpFile file = extract("""
+                namespace North;
+                class Item {
+                    public $value = 11;
+                    function process() { function hidden() {} class Local {} }
+                }
+                function process() {}
+                namespace South;
+                class Item {
+                    public $value = 22;
+                    function process() { function hidden() {} class Local {} }
+                }
+                function process() {}
+                """);
+        List<NamespaceSection> sections = file.namespaceSections();
+        assertEquals(List.of("North", "South"), sections.stream().map(NamespaceSection::namespaceName).toList());
+        DeclarationIndex index = file.declarationIndex();
+        for (int i = 0; i < sections.size(); i++) {
+            NamespaceSection section = sections.get(i);
+            String namespace = List.of("North", "South").get(i);
+            assertEquals(List.of("Item", "process"), declarationNames(section));
+            ClassLikeDefinition type = assertInstanceOf(ClassLikeDefinition.class, section.declarations().getFirst());
+            FunctionDefinition function = assertInstanceOf(FunctionDefinition.class, section.declarations().get(1));
+            assertEquals(section.id(), type.sectionId());
+            assertEquals(section.id(), function.sectionId());
+            assertEquals(namespace + "\\Item", type.qualifiedName());
+            assertEquals(namespace + "\\process", function.qualifiedName());
+            assertEquals(List.of(type), index.findTopLevel(TopLevelKind.TYPE, namespace + "\\Item"));
+            assertEquals(List.of(function), index.findTopLevel(TopLevelKind.FUNCTION, namespace + "\\process"));
+
+            assertEquals(2, type.members().size());
+            PropertyDefinition property = assertInstanceOf(PropertyDefinition.class, type.members().getFirst());
+            MethodDefinition method = assertInstanceOf(MethodDefinition.class, type.members().get(1));
+            assertEquals("value", property.name());
+            assertEquals("process", method.name());
+            assertEquals(type.id(), property.ownerId());
+            assertEquals(type.id(), method.ownerId());
+            assertIntegerSyntax(property.initialValue(), List.of("11", "22").get(i));
+            assertEquals(List.of(property), index.findMembers(type.id(), MemberKind.PROPERTY, "value"));
+            assertEquals(List.of(method), index.findMembers(type.id(), MemberKind.METHOD, "process"));
+
+            SyntaxBody body = method.body();
+            assertNotNull(body);
+            assertEquals(2, body.statements().size());
+            NodeInnerStatement nestedFunction = assertInstanceOf(NodeInnerStatement.class, body.statements().getFirst());
+            NodeInnerStatement nestedType = assertInstanceOf(NodeInnerStatement.class, body.statements().get(1));
+            assertEquals("hidden", nestedFunction.getFunction().getName().getValue());
+            assertEquals("Local", nestedType.getClazz().getName().getValue());
+            assertTrue(index.findTopLevel(TopLevelKind.FUNCTION, namespace + "\\hidden").isEmpty());
+            assertTrue(index.findTopLevel(TopLevelKind.TYPE, namespace + "\\Local").isEmpty());
+            assertTrue(index.findMembers(type.id(), MemberKind.METHOD, "hidden").isEmpty());
+        }
+        assertNotEquals(sections.getFirst().declarations().getFirst().id(), sections.get(1).declarations().getFirst().id());
+    }
+
     // 只提取源码声明信息：保留重复修饰符、var、半保留名称以及 trait 适配原树。
     @Test
     void extractsClassMembersParentsAndTraitAdaptationsWithoutLosingOrder() {
@@ -393,6 +483,13 @@ class SemanticModelTest {
     private static void assertSyntaxIdentity(List<? extends AstNode> expected, SyntaxBody actual) {
         assertEquals(expected.size(), actual.statements().size());
         for (int i = 0; i < expected.size(); i++) assertSame(expected.get(i), actual.statements().get(i));
+    }
+
+    private static void assertIntegerSyntax(SyntaxExpression actual, String expected) {
+        assertNotNull(actual);
+        NodeExpr expression = assertInstanceOf(NodeExpr.ExprWithoutVariable.class, actual.syntax());
+        NodeExprWithoutVariable scalar = assertInstanceOf(NodeExprWithoutVariable.Scalar.class, expression.getEv());
+        assertEquals(expected, assertInstanceOf(NodeScalar.Int.class, scalar.getScalar()).getNum().getValue());
     }
 
     private static void assertImport(ImportDeclaration actual, ImportKind kind, String target,

@@ -72,6 +72,29 @@ class SyntaxConverterContractTest {
         }
     }
 
+    // 用手写坐标验证跨行范围：外层一元节点的操作数 Symbol 包含右括号，内层算式不含括号。
+    @Test
+    void preservesExactRangesAcrossMultilineParenthesizedExpressions() {
+        NodeProgram parsed = (NodeProgram) Main.parse("<?php\n-(0x2A +\n  1.5);");
+        NodeExpr expression = parsed.getStmts().getValue().getFirst().getStmt().getExpression();
+        String sourceId = "multiline-expression.php";
+        IrUnary unary = assertInstanceOf(IrUnary.class, SyntaxConverter.convertExpression(
+                new SyntaxExpression(expression, new SourceInfo(sourceId, null))));
+        assertEquals(UnaryOperator.MINUS, unary.operator());
+        assertEquals(new SourceInfo(sourceId, new SourceRange(2, 1, 3, 7)), unary.source());
+
+        IrBinary binary = assertInstanceOf(IrBinary.class, unary.operand());
+        assertEquals(BinaryOperator.ADD, binary.operator());
+        assertEquals(new SourceInfo(sourceId, new SourceRange(2, 3, 3, 6)), binary.source());
+
+        IrIntegerLiteral integer = assertInstanceOf(IrIntegerLiteral.class, binary.left());
+        assertEquals(42L, integer.value());
+        assertEquals(new SourceInfo(sourceId, new SourceRange(2, 3, 2, 7)), integer.source());
+        IrFloatLiteral floating = assertInstanceOf(IrFloatLiteral.class, binary.right());
+        assertEquals(1.5, floating.value());
+        assertEquals(new SourceInfo(sourceId, new SourceRange(3, 3, 3, 6)), floating.source());
+    }
+
     // 未知位置不猜测成有效范围；合法零宽位置仍应保留，来源标识可以独立缺省。
     @Test
     void keepsUnknownAndZeroWidthLocationsDistinct() {
