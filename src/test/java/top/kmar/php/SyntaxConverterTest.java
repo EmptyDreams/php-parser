@@ -18,6 +18,7 @@ class SyntaxConverterTest {
     // 不同进制的整数与十进制浮点数统一解码，数值节点不再依赖原文表示。
     @Test
     void decodesNumericLiteralsIntoTypedValues() {
+        //noinspection OctalInteger
         Map<String, Long> integers = Map.ofEntries(
                 Map.entry("0", 0L), Map.entry("42", 42L), Map.entry("077", 63L),
                 Map.entry("0x2A", 42L), Map.entry("0b101010", 42L),
@@ -390,7 +391,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { switch ($value) { default: ; } }
+                function unrelated() { unset($value); }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -441,11 +442,10 @@ class SyntaxConverterTest {
         }
     }
 
-    // switch、嵌套声明和其它非子集语句一律报错，不跳过其可执行内容。
+    // 嵌套声明和其它非子集语句一律报错，不跳过其可执行内容。
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "switch ($a) { default: ; }", "throw $a;", "try {} finally {}",
                 "global $a;", "unset($a);",
                 "function nested() {}", "class Nested {}", "goto end; end: ;")) {
             SyntaxBody syntax = syntaxBody(code);

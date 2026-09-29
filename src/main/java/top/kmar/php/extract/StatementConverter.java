@@ -4,6 +4,7 @@ import java_cup.runtime.AstNode;
 import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
+import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SyntaxBody;
 
 import java.util.ArrayDeque;
@@ -87,6 +88,18 @@ final class StatementConverter {
                     : expressions.convert(stmt.getLevels(), path + ".levels"), context.source(stmt));
             case NodeStatement.Continue stmt -> new IrContinue(stmt.getLevels() == null ? null
                     : expressions.convert(stmt.getLevels(), path + ".levels"), context.source(stmt));
+            case NodeStatement.Switch stmt -> new IrSwitch(
+                    expressions.convert(context.required(stmt.getCond(), stmt, path + ".cond"), path + ".cond"),
+                    switchCases(context.required(stmt.getCases(), stmt, path + ".cases"), path + ".cases"),
+                    context.source(stmt));
+            case NodeStatement.Try stmt -> new IrTry(
+                    sequenceBlock(stmt.getStmts(), stmt, path + ".stmts"),
+                    catches(context.required(stmt.getCatches(), stmt, path + ".catches"), path + ".catches"),
+                    finallyBlock(context.required(stmt.getFinallyBlock(), stmt, path + ".finallyBlock"),
+                            path + ".finallyBlock"), context.source(stmt));
+            case NodeStatement.Throw stmt -> new IrThrow(
+                    expressions.convert(context.required(stmt.getExpr(), stmt, path + ".expr"), path + ".expr"),
+                    context.source(stmt));
             default -> throw context.error(node, path, "不支持的语句或声明结构：" + node.getNodeName());
         };
     }
@@ -112,6 +125,99 @@ final class StatementConverter {
     private IrBlock statementBlock(NodeStatement node, String path) {
         IrStatement converted = statement(node, path);
         return converted instanceof IrBlock block ? block : new IrBlock(List.of(converted), converted.source());
+    }
+
+    /** 分支和 try 的体使用列表自身范围，不把整个链节点的累计范围当成块范围。 */
+    private IrBlock sequenceBlock(@Nullable NodeListNodeInnerStatement list, AstNode origin, String path) {
+        context.required(list, origin, path);
+        return innerBlock(list, list, path);
+    }
+
+    private List<IrSwitchCase> switchCases(NodeSwitchCaseList node, String path) {
+        if (!(node instanceof NodeSwitchCaseList.Cases || node instanceof NodeSwitchCaseList.CasesWithSemi
+                || node instanceof NodeSwitchCaseList.AltCases || node instanceof NodeSwitchCaseList.AltCasesWithSemi)) {
+            throw context.error(node, path, "无法识别的 switch 分支包装");
+        }
+        var current = context.required(node.getCases(), node, path + ".cases");
+        var pending = new ArrayDeque<Map.Entry<NodeCaseList, String>>();
+        String branchPath = path + ".cases";
+        // case_list 是左递归链；只有精确基类表示空产生式，未知子类不能当作结束。
+        while (current.getClass() != NodeCaseList.class) {
+            if (!(current instanceof NodeCaseList.Case || current instanceof NodeCaseList.DefaultCase)) {
+                throw context.error(current, branchPath, "无法识别的 switch 分支结构");
+            }
+            pending.addFirst(Map.entry(current, branchPath));
+            current = context.required(current.getCases(), current, branchPath + ".cases");
+            branchPath += ".cases";
+        }
+        var result = new ArrayList<IrSwitchCase>(pending.size());
+        for (var entry : pending) {
+            var branch = entry.getKey();
+            String p = entry.getValue();
+            IrExpression condition = null;
+            if (branch instanceof NodeCaseList.Case) {
+                condition = expressions.convert(context.required(branch.getCond(), branch, p + ".cond"),
+                        p + ".cond");
+            } else if (!context.text(branch.getKw(), branch, p + ".kw").equalsIgnoreCase("default")) {
+                throw context.error(branch, p + ".kw", "无法识别的 default 标记");
+            }
+            caseSeparator(context.required(branch.getSep(), branch, p + ".sep"), p + ".sep");
+            result.add(new IrSwitchCase(condition, sequenceBlock(branch.getStmts(), branch, p + ".stmts"),
+                    context.source(branch)));
+        }
+        return result;
+    }
+
+    private void caseSeparator(NodeCaseSeparator node, String path) {
+        switch (node) {
+            case NodeCaseSeparator.Colon separator -> {
+                if (!context.text(separator.getColon(), separator, path + ".colon").equals(":")) {
+                    throw context.error(separator, path + ".colon", "无法识别的 case 冒号分隔符");
+                }
+            }
+            case NodeCaseSeparator.Semi separator -> {
+                if (!context.text(separator.getSemicolon(), separator, path + ".semicolon").equals(";")) {
+                    throw context.error(separator, path + ".semicolon", "无法识别的 case 分号分隔符");
+                }
+            }
+            default -> throw context.error(node, path, "无法识别的 case 分隔符结构");
+        }
+    }
+
+    private List<IrCatch> catches(NodeCatchList node, String path) {
+        var pending = new ArrayDeque<Map.Entry<NodeCatchList.CatchItem, String>>();
+        while (node.getClass() != NodeCatchList.class) {
+            if (!(node instanceof NodeCatchList.CatchItem item)) {
+                throw context.error(node, path, "无法识别的 catch 结构");
+            }
+            pending.addFirst(Map.entry(item, path));
+            node = context.required(item.getCatches(), item, path + ".catches");
+            path += ".catches";
+        }
+        var result = new ArrayList<IrCatch>(pending.size());
+        for (var entry : pending) {
+            var item = entry.getKey();
+            String p = entry.getValue();
+            var list = context.required(item.getExceptions(), item, p + ".exceptions");
+            var names = context.elements(list.getValue(), list, p + ".exceptions");
+            if (names.isEmpty()) throw context.error(item, p + ".exceptions", "catch 至少需要一个异常类型");
+            var types = new ArrayList<NameReference>(names.size());
+            for (int i = 0; i < names.size(); i++) {
+                types.add(context.name(names.get(i), p + ".exceptions[" + i + "]"));
+            }
+            // T_VARIABLE 已由词法去掉开头的 $，此处保留名称而不再次截取。
+            result.add(new IrCatch(types, context.text(item.getVar(), item, p + ".var"),
+                    sequenceBlock(item.getStmts(), item, p + ".stmts"), context.source(item)));
+        }
+        return result;
+    }
+
+    private @Nullable IrBlock finallyBlock(NodeFinallyStatement node, String path) {
+        if (node.getClass() == NodeFinallyStatement.class) return null;
+        if (node instanceof NodeFinallyStatement.Finally block) {
+            return innerBlock(block.getStmts(), block, path + ".stmts");
+        }
+        throw context.error(node, path, "无法识别的 finally 结构");
     }
 
     /** 三组 for 列表独立转换；空列表合法，但缺少列表包装或列表元素并不合法。 */

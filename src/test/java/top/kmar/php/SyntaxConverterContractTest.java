@@ -269,7 +269,7 @@ class SyntaxConverterContractTest {
 
         assertEquals(6, body.statements().size());
         IrAssignment initialization = assertInstanceOf(IrAssignment.class,
-                assertInstanceOf(IrExpressionStatement.class, body.statements().get(0)).expression());
+                assertInstanceOf(IrExpressionStatement.class, body.statements().getFirst()).expression());
         assertEquals("result", assertInstanceOf(IrVariableTarget.class, initialization.target()).name());
         assertTrue(assertInstanceOf(IrArrayLiteral.class, initialization.value()).entries().isEmpty());
         IrFor loop = assertInstanceOf(IrFor.class, body.statements().get(1));
@@ -359,6 +359,7 @@ class SyntaxConverterContractTest {
             var error = assertArrayFailure(list, location);
             assertTrue(error.fieldPath().endsWith(pair.getValue() == null ? ".value" : ".key"));
         }
+        //noinspection ThrowableNotThrown
         assertArrayFailure(null, location);
     }
 
@@ -416,7 +417,7 @@ class SyntaxConverterContractTest {
     void keepsFailureStateLocalToEachConversion() {
         var file = DeclarationExtractor.extract(Main.parse("""
                 <?php
-                function bad() { echo 1; switch (true) {} return 2; }
+                function bad() { echo 1; unset($value); return 2; }
                 function good() { return 3; }
                 """));
         var declarations = file.namespaceSections().getFirst().declarations();
