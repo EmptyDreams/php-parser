@@ -53,6 +53,7 @@ final class StatementConverter {
             case NodeStatement.Return ret -> new IrReturn(ret.getValue() == null ? null
                     : expressions.convert(ret.getValue(), path + ".value"), context.source(ret));
             case NodeStatement.Echo echo -> echo(echo, path);
+            case NodeStatement.Unset unset -> unset(unset, path);
             case NodeStatement.If stmt -> standardIf(
                     context.required(stmt.getIfStmt(), stmt, path + ".ifStmt"), path + ".ifStmt");
             case NodeStatement.AltIf stmt -> alternateIf(
@@ -113,6 +114,17 @@ final class StatementConverter {
             converted.add(expressions.convert(values.get(i), path + ".exprs[" + i + "]"));
         }
         return new IrEcho(converted, context.source(node));
+    }
+
+    private IrUnset unset(NodeStatement.Unset node, String path) {
+        var list = context.required(node.getUnsetVars(), node, path + ".unsetVars");
+        var values = context.elements(list.getValue(), list, path + ".unsetVars");
+        if (values.isEmpty()) throw context.error(node, path + ".unsetVars", "unset 至少需要一个目标");
+        var targets = new ArrayList<IrAssignmentTarget>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            targets.add(expressions.unsetTarget(values.get(i), path + ".unsetVars[" + i + "]"));
+        }
+        return new IrUnset(targets, context.source(node));
     }
 
     /** CUP 1.1.0 的 * 空产生式返回空列表；包装和 value 均不可缺失。 */

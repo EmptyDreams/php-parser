@@ -308,18 +308,18 @@ class ControlFlowConversionTest {
     @Test
     void rejectsUnsupportedContentsInEveryNewStatementPosition() {
         for (String code : List.of(
-                "switch (isset($value)) {}",
-                "switch ($value) { case isset($value): ; }",
-                "switch ($value) { case 1: unset($value); }",
+                "switch ($callback()) {}",
+                "switch ($value) { case $callback(): ; }",
+                "switch ($value) { case 1: $callback(); }",
                 "switch ($value) { default: global $value; }",
                 "switch ($value) { case 1: function nested() {} }",
-                "try { unset($value); } finally {}",
-                "try {} catch (Problem $error) { unset($error); }",
-                "try {} finally { unset($value); }",
+                "try { $callback(); } finally {}",
+                "try {} catch (Problem $error) { $callback(); }",
+                "try {} finally { $callback(); }",
                 "try { class Nested {} } finally {}",
                 "try {} catch (Problem $error) { function nested() {} }",
                 "try {} finally { function nested() {} }",
-                "throw isset($value);")) {
+                "throw $callback();")) {
             SyntaxBody syntax = assertDoesNotThrow(() -> syntaxBody(code), code);
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
             assertEquals("control-flow.php", error.source().sourceId());

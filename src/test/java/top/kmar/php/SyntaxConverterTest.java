@@ -391,7 +391,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { unset($value); }
+                function unrelated() { $callback(); }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -420,9 +420,9 @@ class SyntaxConverterTest {
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
                 "$$a", "$callback()", "f(...$args)",
-                "$a =& $b", "(int) $a", "@f()",
+                "$a =& $b",
                 "function () {}", "\"$a\"", "__LINE__",
-                "print $a", "isset($a)", "yield 1",
+                "yield 1",
                 "<<<EOT\nplain text\nEOT\n", "<<<'NOW'\nno $interpolation\nNOW\n",
                 "<<<EMPTY\nEMPTY\n")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
@@ -446,7 +446,7 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "global $a;", "unset($a);",
+                "global $a;", "$callback();",
                 "function nested() {}", "class Nested {}", "goto end; end: ;")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);

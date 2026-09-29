@@ -56,6 +56,13 @@ final class ExpressionConverter {
             case NodeExprWithoutVariable.Instanceof ignored -> instanceOf(node, path);
             case NodeExprWithoutVariable.Binary ignored -> binary(node, path);
             case NodeExprWithoutVariable.Unary ignored -> unary(node, path);
+            case NodeExprWithoutVariable.Cast ignored -> cast(node, path);
+            case NodeExprWithoutVariable.InternalFunction ignored -> internalFunction(
+                    context.required(node.getFunc(), node, path + ".func"), path + ".func");
+            case NodeExprWithoutVariable.Print ignored -> new IrPrint(
+                    convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                    context.source(node));
+            case NodeExprWithoutVariable.Exit ignored -> exit(node, path);
             case NodeExprWithoutVariable.Conditional ignored -> new IrConditional(
                     convert(context.required(node.getCond(), node, path + ".cond"), path + ".cond"),
                     convert(context.required(node.getThenExpr(), node, path + ".thenExpr"), path + ".thenExpr"),
@@ -66,9 +73,7 @@ final class ExpressionConverter {
                     null,
                     convert(context.required(node.getElseExpr(), node, path + ".elseExpr"), path + ".elseExpr"),
                     context.source(node));
-            // 这些已知变体也有 op/expr 字段，但不属于一元正负号，不能落入字段识别分支。
-            case NodeExprWithoutVariable.Cast ignored ->
-                    throw context.error(node, path, "暂不支持类型转换表达式");
+            // 此已知变体也有 op/expr 字段，但不属于一元正负号，不能落入字段识别分支。
             case NodeExprWithoutVariable.YieldFrom ignored ->
                     throw context.error(node, path, "暂不支持 yield from 表达式");
             default -> signedUnary(node, path);
@@ -84,8 +89,13 @@ final class ExpressionConverter {
         throw context.error(node, path, "暂不支持或无法识别的表达式形式");
     }
 
-    private IrUnary unary(NodeExprWithoutVariable node, String path) {
+    private IrExpression unary(NodeExprWithoutVariable node, String path) {
         String spelling = context.text(node.getOp(), node, path + ".op");
+        if (spelling.equals("@")) {
+            return new IrErrorSuppress(
+                    convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                    context.source(node));
+        }
         UnaryOperator operator = switch (spelling) {
             case "+" -> UnaryOperator.PLUS;
             case "-" -> UnaryOperator.MINUS;
@@ -95,6 +105,75 @@ final class ExpressionConverter {
         };
         return new IrUnary(operator,
                 convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                context.source(node));
+    }
+
+    private IrCast cast(NodeExprWithoutVariable node, String path) {
+        String spelling = context.text(node.getOp(), node, path + ".op");
+        int start = 1;
+        int end = spelling.length() - 1;
+        if (end < start || spelling.charAt(0) != '(' || spelling.charAt(end) != ')') {
+            throw context.error(node, path + ".op", "无法识别的类型转换标记: " + spelling);
+        }
+        // 只接受词法定义中的括号及两侧空格/tab，不删除类型名称内部或其它种类的空白。
+        while (start < end && isCastSpace(spelling.charAt(start))) start++;
+        while (end > start && isCastSpace(spelling.charAt(end - 1))) end--;
+        CastKind kind = switch (spelling.substring(start, end).toLowerCase(Locale.ROOT)) {
+            case "int", "integer" -> CastKind.INTEGER;
+            case "real", "double", "float" -> CastKind.FLOAT;
+            case "string", "binary" -> CastKind.STRING;
+            case "array" -> CastKind.ARRAY;
+            case "object" -> CastKind.OBJECT;
+            case "bool", "boolean" -> CastKind.BOOLEAN;
+            case "unset" -> CastKind.UNSET;
+            default -> throw context.error(node, path + ".op", "无法识别的类型转换标记: " + spelling);
+        };
+        return new IrCast(kind,
+                convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                context.source(node));
+    }
+
+    private static boolean isCastSpace(char character) {
+        return character == ' ' || character == '\t';
+    }
+
+    private IrExpression internalFunction(NodeInternalFunctionsInYacc node, String path) {
+        if (node instanceof NodeInternalFunctionsInYacc.Isset) {
+            var list = context.required(node.getVars(), node, path + ".vars");
+            var values = context.elements(list.getValue(), list, path + ".vars");
+            if (values.isEmpty()) throw context.error(node, path + ".vars", "isset 至少需要一个表达式");
+            var expressions = new ArrayList<IrExpression>(values.size());
+            for (int i = 0; i < values.size(); i++) {
+                expressions.add(convert(values.get(i), path + ".vars[" + i + "]"));
+            }
+            return new IrIsset(expressions, context.source(node));
+        }
+        if (!(node instanceof NodeInternalFunctionsInYacc.IncludeOrEval)) {
+            throw context.error(node, path, "无法识别的内置语言结构");
+        }
+        String operator = context.text(node.getOp(), node, path + ".op").toLowerCase(Locale.ROOT);
+        if (!List.of("empty", "include", "include_once", "require", "require_once", "eval").contains(operator)) {
+            throw context.error(node, path + ".op", "无法识别的内置语言结构标记: " + operator);
+        }
+        IrExpression expression = convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr");
+        return switch (operator) {
+            case "empty" -> new IrEmptyCheck(expression, context.source(node));
+            case "eval" -> new IrEval(expression, context.source(node));
+            case "include" -> new IrInclude(IncludeKind.INCLUDE, expression, context.source(node));
+            case "include_once" -> new IrInclude(IncludeKind.INCLUDE_ONCE, expression, context.source(node));
+            case "require" -> new IrInclude(IncludeKind.REQUIRE, expression, context.source(node));
+            case "require_once" -> new IrInclude(IncludeKind.REQUIRE_ONCE, expression, context.source(node));
+            default -> throw new AssertionError("已验证的内置标记: " + operator);
+        };
+    }
+
+    private IrExit exit(NodeExprWithoutVariable node, String path) {
+        NodeExitExpr argument = context.required(node.getArg(), node, path + ".arg");
+        if (argument.getClass() == NodeExitExpr.class) return new IrExit(null, context.source(node));
+        if (!(argument instanceof NodeExitExpr.ExitArgs)) {
+            throw context.error(argument, path + ".arg", "无法识别的 exit 参数包装");
+        }
+        return new IrExit(argument.getExpr() == null ? null : convert(argument.getExpr(), path + ".arg.expr"),
                 context.source(node));
     }
 
@@ -330,17 +409,26 @@ final class ExpressionConverter {
 
     /** 普通赋值、复合赋值、更新及 foreach 共用；调用结果只能作访问基底，不能独立赋值。 */
     IrAssignmentTarget assignmentTarget(NodeVariable node, String path) {
-        IrWriteBase base = variableWriteBase(node, path);
+        return target(node, path, true);
+    }
+
+    /** 删除沿目标链禁止追加，但不限制下标、实参中独立表达式的写操作。 */
+    IrAssignmentTarget unsetTarget(NodeVariable node, String path) {
+        return target(node, path, false);
+    }
+
+    private IrAssignmentTarget target(NodeVariable node, String path, boolean allowAppend) {
+        IrWriteBase base = variableWriteBase(node, path, allowAppend);
         if (base instanceof IrAssignmentTarget target) return target;
         throw context.error(node, path, "调用结果不能独立作为可写目标");
     }
 
-    private IrWriteBase variableWriteBase(NodeVariable node, String path) {
+    private IrWriteBase variableWriteBase(NodeVariable node, String path, boolean allowAppend) {
         return switch (node) {
             case NodeVariable.CallableVariable ignored -> callableWriteBase(
-                    context.required(node.getCv(), node, path + ".cv"), path + ".cv");
+                    context.required(node.getCv(), node, path + ".cv"), path + ".cv", allowAppend);
             case NodeVariable.PropertyAccess ignored -> new IrPropertyTarget(
-                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d", allowAppend),
                     propertyName(context.required(node.getProp(), node, path + ".prop"), path + ".prop"),
                     context.source(node));
             case NodeVariable.StaticMember ignored -> staticPropertyTarget(
@@ -349,7 +437,7 @@ final class ExpressionConverter {
         };
     }
 
-    private IrWriteBase callableWriteBase(NodeCallableVariable node, String path) {
+    private IrWriteBase callableWriteBase(NodeCallableVariable node, String path, boolean allowAppend) {
         return switch (node) {
             case NodeCallableVariable.FunctionCall ignored -> expressionWriteBase(callableVariable(node, path));
             case NodeCallableVariable.MethodCall ignored -> expressionWriteBase(callableVariable(node, path));
@@ -358,15 +446,24 @@ final class ExpressionConverter {
                 yield new IrVariableTarget(variableName(simple, path + ".sv"), context.source(simple));
             }
             case NodeCallableVariable.Index ignored -> new IrIndexTarget(
-                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
-                    node.getOffset() == null ? null : convert(node.getOffset(), path + ".offset"),
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d", allowAppend),
+                    targetIndex(node.getOffset(), node, path + ".offset", allowAppend),
                     context.source(node));
             case NodeCallableVariable.CurlyIndex ignored -> new IrIndexTarget(
-                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d", allowAppend),
                     convert(context.required(node.getE(), node, path + ".e"), path + ".e"),
                     context.source(node));
             default -> throw context.error(node, path, "暂不支持的写入基底");
         };
+    }
+
+    private @Nullable IrExpression targetIndex(@Nullable NodeExpr index, AstNode origin, String path,
+                                              boolean allowAppend) {
+        if (index == null) {
+            if (!allowAppend) throw context.error(origin, path, "删除目标的下标不能省略索引");
+            return null;
+        }
+        return convert(index, path);
     }
 
     private IrExpressionWriteBase expressionWriteBase(IrExpression expression) {
@@ -374,27 +471,27 @@ final class ExpressionConverter {
         return new IrExpressionWriteBase(expression, expression.source());
     }
 
-    private IrWriteBase dereferencableWriteBase(NodeDereferencable node, String path) {
+    private IrWriteBase dereferencableWriteBase(NodeDereferencable node, String path, boolean allowAppend) {
         return switch (node) {
             case NodeDereferencable.Var ignored -> variableWriteBase(
-                    context.required(node.getV(), node, path + ".v"), path + ".v");
+                    context.required(node.getV(), node, path + ".v"), path + ".v", allowAppend);
             case NodeDereferencable.Paren ignored -> expressionWriteBase(
-                    context.required(node.getE(), node, path + ".e"), path + ".e");
+                    context.required(node.getE(), node, path + ".e"), path + ".e", allowAppend);
             default -> throw context.error(node, path, "暂不支持的写入基底");
         };
     }
 
-    private IrWriteBase expressionWriteBase(NodeExpr node, String path) {
+    private IrWriteBase expressionWriteBase(NodeExpr node, String path, boolean allowAppend) {
         return switch (node) {
             case NodeExpr.VariableExpr ignored -> variableWriteBase(
-                    context.required(node.getV(), node, path + ".v"), path + ".v");
+                    context.required(node.getV(), node, path + ".v"), path + ".v", allowAppend);
             case NodeExpr.ExprWithoutVariable ignored -> {
                 NodeExprWithoutVariable expression = context.required(node.getEv(), node, path + ".ev");
                 if (!(expression instanceof NodeExprWithoutVariable.Paren)) {
                     throw context.error(expression, path + ".ev", "暂不支持的写入基底");
                 }
                 yield expressionWriteBase(context.required(expression.getExpr(), expression, path + ".ev.expr"),
-                        path + ".ev.expr");
+                        path + ".ev.expr", allowAppend);
             }
             default -> throw context.error(node, path, "无法识别的可写基底表达式包装");
         };
