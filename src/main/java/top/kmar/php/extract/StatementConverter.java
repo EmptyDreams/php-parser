@@ -11,15 +11,16 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** 只在适配层理解语句包装和普通／冒号文法，输出不再包含 CUP 节点。 */
 final class StatementConverter {
     private final ConversionContext context;
     private final ExpressionConverter expressions;
 
-    StatementConverter(ConversionContext context) {
-        this.context = context;
-        expressions = new ExpressionConverter(context);
+    StatementConverter(ConversionContext context, ExpressionConverter expressions) {
+        this.context = Objects.requireNonNull(context, "context");
+        this.expressions = Objects.requireNonNull(expressions, "expressions");
     }
 
     IrBlock body(SyntaxBody body) {
@@ -140,7 +141,7 @@ final class StatementConverter {
     }
 
     /** 分支和 try 的体使用列表自身范围，不把整个链节点的累计范围当成块范围。 */
-    private IrBlock sequenceBlock(@Nullable NodeListNodeInnerStatement list, AstNode origin, String path) {
+    IrBlock sequenceBlock(@Nullable NodeListNodeInnerStatement list, AstNode origin, String path) {
         context.required(list, origin, path);
         return innerBlock(list, list, path);
     }

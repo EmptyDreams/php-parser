@@ -420,8 +420,8 @@ class SyntaxConverterTest {
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
                 "$a =& $b",
-                "function () {}", "\"$a\"", "__LINE__",
-                "yield 1",
+                "function () { __LINE__; }", "\"$a\"", "__LINE__",
+                "yield __LINE__",
                 "<<<EOT\nplain text\nEOT\n", "<<<'NOW'\nno $interpolation\nNOW\n",
                 "<<<EMPTY\nEMPTY\n")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);

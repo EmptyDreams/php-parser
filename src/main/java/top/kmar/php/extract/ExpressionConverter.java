@@ -73,11 +73,49 @@ final class ExpressionConverter {
                     null,
                     convert(context.required(node.getElseExpr(), node, path + ".elseExpr"), path + ".elseExpr"),
                     context.source(node));
-            // 此已知变体也有 op/expr 字段，但不属于一元正负号，不能落入字段识别分支。
-            case NodeExprWithoutVariable.YieldFrom ignored ->
-                    throw context.error(node, path, "暂不支持 yield from 表达式");
+            case NodeExprWithoutVariable.Closure ignored -> new ClosureConverter(context, this).convert(node, path);
+            case NodeExprWithoutVariable.StaticClosure ignored -> new ClosureConverter(context, this).convert(node, path);
+            case NodeExprWithoutVariable.Yield ignored -> yieldExpression(node, path);
+            case NodeExprWithoutVariable.YieldValue ignored -> yieldExpression(node, path);
+            case NodeExprWithoutVariable.YieldKV ignored -> yieldExpression(node, path);
+            case NodeExprWithoutVariable.YieldFrom ignored -> yieldExpression(node, path);
             default -> signedUnary(node, path);
         };
+    }
+
+    private IrExpression yieldExpression(NodeExprWithoutVariable node, String path) {
+        String operator = context.text(node.getOp(), node, path + ".op");
+        if (node instanceof NodeExprWithoutVariable.YieldFrom) {
+            if (!isYieldFrom(operator)) throw context.error(node, path + ".op", "无法识别的 yield from 标记");
+            return new IrYieldFrom(convert(context.required(node.getExpr(), node, path + ".expr"),
+                    path + ".expr"), context.source(node));
+        }
+        if (!operator.equalsIgnoreCase("yield")) {
+            throw context.error(node, path + ".op", "无法识别的 yield 标记");
+        }
+        return switch (node) {
+            case NodeExprWithoutVariable.Yield ignored -> new IrYield(null, null, context.source(node));
+            case NodeExprWithoutVariable.YieldValue ignored -> new IrYield(null,
+                    convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                    context.source(node));
+            case NodeExprWithoutVariable.YieldKV ignored -> new IrYield(
+                    convert(context.required(node.getKey(), node, path + ".key"), path + ".key"),
+                    convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                    context.source(node));
+            default -> throw context.error(node, path, "无法识别的 yield 结构");
+        };
+    }
+
+    /** 词法保留原文：两个关键字之间允许一个或多个空格、tab、CR 或 LF。 */
+    private static boolean isYieldFrom(String operator) {
+        int fromStart = operator.length() - 4;
+        if (fromStart <= 5 || !operator.regionMatches(true, 0, "yield", 0, 5)
+                || !operator.regionMatches(true, fromStart, "from", 0, 4)) return false;
+        for (int i = 5; i < fromStart; i++) {
+            char character = operator.charAt(i);
+            if (character != ' ' && character != '\t' && character != '\r' && character != '\n') return false;
+        }
+        return true;
     }
 
     private IrExpression signedUnary(NodeExprWithoutVariable node, String path) {
