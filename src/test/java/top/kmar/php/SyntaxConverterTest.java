@@ -7,6 +7,7 @@ import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.*;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -34,12 +35,12 @@ class SyntaxConverterTest {
                 assertEquals(value.doubleValue(), assertInstanceOf(IrFloatLiteral.class, expression(lexeme)).value(), lexeme));
     }
 
-    // 非数值字符串仍保留前缀、引号与转义，不在这一阶段解码字符串。
+    // 普通字符串统一解码为字节值，前缀和引号不再作为 IR 值保存。
     @Test
-    void preservesStringLiteralLexemes() {
-        for (String value : List.of("'text'", "\"text\"", "'a\\'b'", "\"a\\n\\t\"", "b'raw'", "B\"raw\"")) {
-            assertLiteral(expression(value), LiteralKind.STRING, value);
-        }
+    void decodesStringLiteralValues() {
+        Map.of("'text'", "text", "\"text\"", "text", "'a\\'b'", "a'b", "\"a\\n\\t\"", "a\n\t",
+                "b'raw'", "raw", "B\"raw\"", "raw")
+                .forEach((code, value) -> assertString(expression(code), value));
     }
 
     // 布尔值和 null 不区分大小写；只有非限定名或全局单名称可以转为字面量。
@@ -262,7 +263,7 @@ class SyntaxConverterTest {
         IrEcho echo = assertInstanceOf(IrEcho.class, block.statements().get(1));
         assertEquals(3, echo.expressions().size());
         assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, echo.expressions().getFirst()).name()));
-        assertLiteral(echo.expressions().get(1), LiteralKind.STRING, "'next'");
+        assertString(echo.expressions().get(1), "next");
         assertInteger(echo.expressions().get(2), 3);
         assertNull(assertInstanceOf(IrReturn.class, block.statements().get(2)).value());
         assertLiteral(assertInstanceOf(IrReturn.class, block.statements().get(3)).value(), LiteralKind.NULL, "null");
@@ -391,7 +392,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { __LINE__; }
+                function unrelated() { (new class {}); }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -420,10 +421,7 @@ class SyntaxConverterTest {
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
                 "$a =& $b",
-                "function () { __LINE__; }", "\"$a\"", "__LINE__",
-                "yield __LINE__",
-                "<<<EOT\nplain text\nEOT\n", "<<<'NOW'\nno $interpolation\nNOW\n",
-                "<<<EMPTY\nEMPTY\n")) {
+                "function () { (new class {}); }", "(new class {})", "yield (new class {})")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
             var error = assertThrows(SyntaxConversionException.class,
                     () -> SyntaxConverter.convertExpression(syntax), code);
@@ -445,7 +443,7 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "global $a;", "__LINE__;",
+                "global $a;", "(new class {});",
                 "function nested() {}", "class Nested {}", "goto end; end: ;")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
@@ -475,6 +473,11 @@ class SyntaxConverterTest {
         IrLiteral literal = assertInstanceOf(IrLiteral.class, actual);
         assertEquals(kind, literal.kind());
         assertEquals(lexeme, literal.lexeme());
+    }
+
+    private static void assertString(IrExpression actual, String value) {
+        assertArrayEquals(value.getBytes(StandardCharsets.UTF_8),
+                assertInstanceOf(IrStringLiteral.class, actual).value().toByteArray());
     }
 
     private static void assertInteger(IrExpression actual, long value) {

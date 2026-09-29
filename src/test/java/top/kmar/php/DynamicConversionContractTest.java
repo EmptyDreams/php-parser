@@ -540,6 +540,16 @@ class DynamicConversionContractTest {
 
     private static void assertNoAst(Object value, Set<Object> visited) throws ReflectiveOperationException {
         if (value == null || !visited.add(value)) return;
+        if (value instanceof ByteString bytes) {
+            byte[] snapshot = bytes.toByteArray();
+            assertEquals(snapshot.length, bytes.size());
+            if (snapshot.length != 0) {
+                byte first = snapshot[0];
+                snapshot[0] ^= 1;
+                assertEquals(first, bytes.byteAt(0));
+            }
+            return;
+        }
         assertFalse(value instanceof AstNode, "动态 IR 不应保留 CUP AST");
         if (value instanceof List<?> list) {
             for (Object child : list) assertNoAst(child, visited);

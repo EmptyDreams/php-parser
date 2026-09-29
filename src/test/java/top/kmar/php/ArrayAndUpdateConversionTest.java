@@ -8,6 +8,7 @@ import top.kmar.php.model.NameForm;
 import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxExpression;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -52,9 +53,7 @@ class ArrayAndUpdateConversionTest {
             assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, entries.get(3).key()).kind());
             assertNull(entries.get(4).key());
             assertEquals(1.5, assertInstanceOf(IrFloatLiteral.class, entries.get(5).key()).value());
-            IrLiteral stringKey = assertInstanceOf(IrLiteral.class, entries.get(6).key());
-            assertEquals(LiteralKind.STRING, stringKey.kind());
-            assertEquals("'2'", stringKey.lexeme());
+            assertString("2", entries.get(6).key());
         }
     }
 
@@ -105,9 +104,7 @@ class ArrayAndUpdateConversionTest {
         assertInteger(42, literal.entries().getFirst().value());
         assertInstanceOf(IrArrayLiteral.class, index("array(42)[0]").base());
 
-        IrLiteral string = assertInstanceOf(IrLiteral.class, index("'text'[1]").base());
-        assertEquals(LiteralKind.STRING, string.kind());
-        assertEquals("'text'", string.lexeme());
+        assertString("text", index("'text'[1]").base());
         IrConstantReference constant = assertInstanceOf(IrConstantReference.class, index("ITEMS[0]").base());
         assertEquals("ITEMS", constant.name().spelling());
         assertEquals(NameForm.UNQUALIFIED, constant.name().form());
@@ -133,7 +130,7 @@ class ArrayAndUpdateConversionTest {
         assertCall("first", inner.index());
 
         IrIndex curlyString = index("'text'{1}");
-        assertEquals("'text'", assertInstanceOf(IrLiteral.class, curlyString.base()).lexeme());
+        assertString("text", curlyString.base());
         assertInteger(1, curlyString.index());
 
         IrAssignment assignment = assertInstanceOf(IrAssignment.class, expression("$items{1}[2] = 3"));
@@ -328,6 +325,11 @@ class ArrayAndUpdateConversionTest {
         assertEquals("array-update.php", error.source().sourceId());
         assertFalse(error.fieldPath().isBlank(), code);
         assertFalse(error.reason().isBlank(), code);
+    }
+
+    private static void assertString(String value, IrExpression actual) {
+        assertArrayEquals(value.getBytes(StandardCharsets.UTF_8),
+                assertInstanceOf(IrStringLiteral.class, actual).value().toByteArray());
     }
 
     private static void assertInteger(long expected, IrExpression expression) {

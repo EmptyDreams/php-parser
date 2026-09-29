@@ -12,14 +12,16 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-/** 将支持的表达式转换为基础 IR；解码数值并保留 AST 分组，不求值或绑定名称。 */
+/** 将支持的表达式转换为基础 IR；解码数值和字符串文本，保留 AST 分组，不求值或绑定名称。 */
 final class ExpressionConverter {
     private final ConversionContext context;
     private final NumericLiteralDecoder numbers;
+    private final StringConverter strings;
 
     ExpressionConverter(ConversionContext context) {
         this.context = Objects.requireNonNull(context, "context");
         this.numbers = new NumericLiteralDecoder(context);
+        this.strings = new StringConverter(context, this);
     }
 
     IrExpression convert(AstNode node, String path) {
@@ -299,14 +301,16 @@ final class ExpressionConverter {
                     context.required(node.getDs(), node, path + ".ds"), path + ".ds");
             case NodeScalar.Constant ignored -> constant(
                     context.required(node.getC(), node, path + ".c"), path + ".c");
-            default -> throw context.error(node, path, "暂不支持魔术常量、插值字符串或 heredoc/nowdoc");
+            case NodeScalar.MagicConst ignored -> strings.scalar(node, path);
+            case NodeScalar.Heredoc ignored -> strings.scalar(node, path);
+            case NodeScalar.InterpolatedString ignored -> strings.scalar(node, path);
+            default -> throw context.error(node, path, "无法识别的标量结构");
         };
     }
 
     private IrExpression dereferencableScalar(NodeDereferencableScalar node, String path) {
         return switch (node) {
-            case NodeDereferencableScalar.ConstantString ignored -> new IrLiteral(LiteralKind.STRING,
-                    context.text(node.getStr(), node, path + ".str"), context.source(node));
+            case NodeDereferencableScalar.ConstantString ignored -> strings.literal(node, path);
             case NodeDereferencableScalar.LongArray ignored -> array(node, path, "array");
             case NodeDereferencableScalar.ShortArray ignored -> array(node, path, "[");
             default -> throw context.error(node, path, "无法识别的可下标访问标量结构");
@@ -389,7 +393,7 @@ final class ExpressionConverter {
         return new IrConstantReference(name, context.source(node));
     }
 
-    private IrExpression variable(NodeVariable node, String path) {
+    IrExpression variable(NodeVariable node, String path) {
         return switch (node) {
             case NodeVariable.CallableVariable ignored -> callableVariable(
                     context.required(node.getCv(), node, path + ".cv"), path + ".cv");

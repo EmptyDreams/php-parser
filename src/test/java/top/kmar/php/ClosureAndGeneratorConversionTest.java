@@ -10,6 +10,7 @@ import top.kmar.php.model.SyntaxBody;
 import top.kmar.php.model.SyntaxExpression;
 import top.kmar.php.model.TypeReference;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -91,7 +92,7 @@ class ClosureAndGeneratorConversionTest {
         IrArrayLiteral items = assertInstanceOf(IrArrayLiteral.class, parameters.get(5).defaultValue());
         assertEquals(1, items.entries().size());
         assertInteger(items.entries().getFirst().key(), 2);
-        assertString(items.entries().getFirst().value(), "'two'");
+        assertString(items.entries().getFirst().value(), "two");
         IrBinary sum = assertInstanceOf(IrBinary.class, parameters.get(6).defaultValue());
         assertEquals(BinaryOperator.ADD, sum.operator());
         assertInteger(sum.left(), 1);
@@ -322,14 +323,14 @@ class ClosureAndGeneratorConversionTest {
         assertAppendAssignment(statementExpression(closure.body(), 0), "items", "next");
     }
 
-    // 新增外壳不吞掉未支持的子树；魔术常量、声明及局部作用域结构继续明确失败。
+    // 新增外壳不吞掉未支持的子树；匿名类、声明及局部作用域结构继续明确失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewExpressionPosition() {
-        for (String code : List.of("function($value = __LINE__) {}", "function() { __LINE__; }",
+        for (String code : List.of("function($value = (new class {})) {}", "function() { (new class {}); }",
                 "function() { return function() { global $value; }; }", "function() { global $value; }",
                 "function() { static $value = 1; }", "function() { function nested() {} }",
                 "function() { class Nested {} }", "function() { return new class {}; }",
-                "yield __LINE__", "yield __LINE__ => 1", "yield 1 => __LINE__", "yield from __LINE__")) {
+                "yield (new class {})", "yield (new class {}) => 1", "yield 1 => (new class {})", "yield from (new class {})")) {
             assertRejected(code);
         }
     }
@@ -384,10 +385,9 @@ class ClosureAndGeneratorConversionTest {
         assertEquals("null", literal.lexeme());
     }
 
-    private static void assertString(IrExpression expression, String lexeme) {
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, expression);
-        assertEquals(LiteralKind.STRING, literal.kind());
-        assertEquals(lexeme, literal.lexeme());
+    private static void assertString(IrExpression expression, String value) {
+        assertArrayEquals(value.getBytes(StandardCharsets.UTF_8),
+                assertInstanceOf(IrStringLiteral.class, expression).value().toByteArray());
     }
 
     private static IrCall assertCall(IrExpression expression, String name, int argumentCount) {

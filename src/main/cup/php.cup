@@ -102,7 +102,7 @@ non terminal AstNode dereferencable_scalar, scalar, constant, expr;
 non terminal AstNode dereferencable, callable_expr, callable_variable, variable;
 non terminal AstNode static_member, new_variable, member_name, property_name;
 non terminal AstNode possible_array_pair, array_pair_list, array_pair;
-non terminal AstNode encaps_list, encaps_var, encaps_var_offset;
+non terminal AstNode encaps_list, encaps_part, encaps_var, encaps_var_offset;
 non terminal AstNode internal_functions_in_yacc;
 non terminal AstNode simple_variable;
 
@@ -570,10 +570,7 @@ exit_expr ::= /* empty */
             | LPAREN expr?:expr RPAREN %namer ExitArgs
             ;
 
-backticks_expr ::= /* empty */
-                 | T_ENCAPSED_AND_WHITESPACE:text %namer ShellExecText
-                 | encaps_list:list %namer ShellExecList
-                 ;
+backticks_expr ::= encaps_list:list %namer ShellExecList;
 
 dereferencable_scalar ::=
       T_ARRAY:kw LPAREN array_pair_list:items RPAREN %namer LongArray
@@ -592,10 +589,8 @@ scalar ::=
     | T_FUNC_C:kw %namer MagicConst
     | T_NS_C:kw %namer MagicConst
     | T_CLASS_C:kw %namer MagicConst
-    | T_START_HEREDOC:h T_ENCAPSED_AND_WHITESPACE:text T_END_HEREDOC:e %namer Heredoc
-    | T_START_HEREDOC:h T_END_HEREDOC:e %namer EmptyHeredoc
+    | T_START_HEREDOC:h encaps_list:list T_END_HEREDOC:e %namer Heredoc
     | DQUOTE encaps_list:list DQUOTE %namer InterpolatedString
-    | T_START_HEREDOC:h encaps_list:list T_END_HEREDOC:e %namer InterpolatedHeredoc
     | dereferencable_scalar:ds %namer DereferencableScalar
     | constant:c %namer Constant
     ;
@@ -679,12 +674,11 @@ array_pair ::=
 
 /* -------- 字符串插值 -------- */
 
-encaps_list ::=
-      encaps_list:parts encaps_var:var %namer Append
-    | encaps_list:parts T_ENCAPSED_AND_WHITESPACE:text %namer AppendText
-    | encaps_var:v %namer Single
-    | T_ENCAPSED_AND_WHITESPACE:text encaps_var:v %namer TextAndVar
-    ;
+encaps_list ::= encaps_part*:parts %namer Parts;
+
+encaps_part ::= T_ENCAPSED_AND_WHITESPACE:text %namer Text
+              | encaps_var:var %namer Variable
+              ;
 
 encaps_var ::=
       T_VARIABLE:var %namer Var

@@ -9,6 +9,7 @@ import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
 import top.kmar.php.model.SyntaxExpression;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -31,7 +32,7 @@ class DynamicConversionTest {
         IrVariable indirect = assertInstanceOf(IrVariable.class, expression("${choose()}"));
         assertCall(computed(indirect.name()), "choose");
         IrVariable literal = assertInstanceOf(IrVariable.class, expression("${'name'}"));
-        assertString(computed(literal.name()), "'name'");
+        assertString(computed(literal.name()), "name");
 
         // 花括号决定下标参与名称计算，还是读取计算名称对应的变量后再取下标。
         IrVariable indexedName = assertInstanceOf(IrVariable.class, expression("${$names[0]}"));
@@ -57,7 +58,7 @@ class DynamicConversionTest {
         assertVariable(computed(method.method()), "p");
         assertTrue(method.arguments().isEmpty());
         assertString(computed(assertInstanceOf(IrMethodCall.class,
-                expression("$obj->{'run'}()")).method()), "'run'");
+                expression("$obj->{'run'}()")).method()), "run");
         IrVariable nested = assertInstanceOf(IrVariable.class, computed(assertInstanceOf(IrPropertyAccess.class,
                 expression("$obj->$$p")).property()));
         assertVariable(computed(nested.name()), "p");
@@ -79,7 +80,7 @@ class DynamicConversionTest {
         assertCall(computed(assertInstanceOf(IrStaticCall.class,
                 expression("Box::{methodName()}()")).method()), "methodName");
         assertString(computed(assertInstanceOf(IrStaticPropertyAccess.class,
-                expression("Box::${'p'}")).property()), "'p'");
+                expression("Box::${'p'}")).property()), "p");
     }
 
     // 属性值作为 callable 与对象方法调用不同，不能因名称相同而合并节点。
@@ -169,9 +170,9 @@ class DynamicConversionTest {
         assertEquals(SpecialClassKind.SELF, assertInstanceOf(IrSpecialClassReference.class,
                 constructed("new self").classReference()).kind());
         assertString(dynamicClass(assertInstanceOf(IrClassName.class,
-                expression("'self'::class")).classReference()), "'self'");
+                expression("'self'::class")).classReference()), "self");
         assertString(dynamicClass(assertInstanceOf(IrStaticCall.class,
-                expression("('static')::run()")).classReference()), "'static'");
+                expression("('static')::run()")).classReference()), "static");
         assertCall(dynamicClass(assertInstanceOf(IrStaticPropertyAccess.class,
                 expression("(chooseClass())::$p")).classReference()), "chooseClass");
         IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class,
@@ -189,13 +190,13 @@ class DynamicConversionTest {
         }
         assertVariable(callable(assertInstanceOf(IrCall.class, expression("$callback()"))), "callback");
         assertVariable(callable(assertInstanceOf(IrCall.class, expression("($callback)()"))), "callback");
-        assertString(callable(assertInstanceOf(IrCall.class, expression("'run'()"))), "'run'");
+        assertString(callable(assertInstanceOf(IrCall.class, expression("'run'()"))), "run");
         for (String code : List.of("[$obj, 'run']()", "array($obj, 'run')()")) {
             IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class,
                     callable(assertInstanceOf(IrCall.class, expression(code))));
             assertEquals(2, array.entries().size());
             assertVariable(array.entries().getFirst().value(), "obj");
-            assertString(array.entries().get(1).value(), "'run'");
+            assertString(array.entries().get(1).value(), "run");
         }
         assertInteger(callable(assertInstanceOf(IrCall.class, expression("(1)()"))), 1);
     }
@@ -400,14 +401,14 @@ class DynamicConversionTest {
         assertCall(assignment.value(), "rhs");
     }
 
-    // 新结构不会掩盖未支持子树；魔术常量在任意名称、类引用或实参中都明确失败。
+    // 新结构不会掩盖未支持子树；匿名类在任意名称、类引用或实参中都明确失败。
     @Test
     void rejectsUnsupportedSubtreesInEveryNewPosition() {
-        for (String code : List.of("${__LINE__}", "$obj->{__LINE__}", "$obj->{__LINE__}()",
-                "Box::${__LINE__}", "Box::{__LINE__}()", "(__LINE__)()", "(__LINE__)::run()",
-                "(__LINE__)::$p", "(__LINE__)::VALUE", "(__LINE__)::class", "new ${__LINE__}",
-                "$value instanceof ${__LINE__}", "$callback(__LINE__)", "$callback(...__LINE__)",
-                "$obj->$method(...__LINE__)", "$type::$method(...__LINE__)", "new $type(...__LINE__)")) {
+        for (String code : List.of("${(new class {})}", "$obj->{(new class {})}", "$obj->{(new class {})}()",
+                "Box::${(new class {})}", "Box::{(new class {})}()", "((new class {}))()", "((new class {}))::run()",
+                "((new class {}))::$p", "((new class {}))::VALUE", "((new class {}))::class", "new ${(new class {})}",
+                "$value instanceof ${(new class {})}", "$callback((new class {}))", "$callback(...(new class {}))",
+                "$obj->$method(...(new class {}))", "$type::$method(...(new class {}))", "new $type(...(new class {}))")) {
             assertRejected(code);
         }
     }
@@ -485,10 +486,9 @@ class DynamicConversionTest {
         assertEquals(expected, assertInstanceOf(IrIntegerLiteral.class, expression).value());
     }
 
-    private static void assertString(IrExpression expression, String lexeme) {
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, expression);
-        assertEquals(LiteralKind.STRING, literal.kind());
-        assertEquals(lexeme, literal.lexeme());
+    private static void assertString(IrExpression expression, String value) {
+        assertArrayEquals(value.getBytes(StandardCharsets.UTF_8),
+                assertInstanceOf(IrStringLiteral.class, expression).value().toByteArray());
     }
 
     private static void assertAppendAssignment(IrExpression expression, String variable, String valueCall) {

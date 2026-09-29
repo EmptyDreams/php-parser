@@ -420,7 +420,7 @@ class SyntaxConverterContractTest {
     void keepsFailureStateLocalToEachConversion() {
         var file = DeclarationExtractor.extract(Main.parse("""
                 <?php
-                function bad() { echo 1; __LINE__; return 2; }
+                function bad() { echo 1; (new class {}); return 2; }
                 function good() { return 3; }
                 """));
         var declarations = file.namespaceSections().getFirst().declarations();
@@ -478,6 +478,16 @@ class SyntaxConverterContractTest {
 
     private static void assertNoAst(Object value, Set<Object> visited) throws ReflectiveOperationException {
         if (value == null || !visited.add(value)) return;
+        if (value instanceof ByteString bytes) {
+            byte[] snapshot = bytes.toByteArray();
+            assertEquals(snapshot.length, bytes.size());
+            if (snapshot.length != 0) {
+                byte first = snapshot[0];
+                snapshot[0] ^= 1;
+                assertEquals(first, bytes.byteAt(0));
+            }
+            return;
+        }
         assertFalse(value instanceof AstNode, "转换结果不应保留 CUP AST");
         if (value instanceof List<?> list) {
             for (Object child : list) assertNoAst(child, visited);

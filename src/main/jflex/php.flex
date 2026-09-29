@@ -110,8 +110,8 @@ import java.util.ArrayDeque;
     }
 
     /** heredoc / nowdoc 结束标签判定。
-     *  当前匹配形如 LABEL (";")? (\r|\n)：与栈顶标签一致则结束（回退 ";"/换行）；
-     *  否则整段是普通文本，且按是否吃掉 "\n" 决定回到行首判定状态还是正文状态。
+     *  当前匹配形如 LABEL (";")? NEWLINE：与栈顶标签一致则结束（回退 ";"/换行）；
+     *  否则整行是普通文本，继续在下一行行首检查标签。
      *  返回 true 表示已作为 T_END_HEREDOC 返回。 */
     private boolean finishHeredoc(boolean nowdoc) {
         String label = heredocLabels.peek();
@@ -126,10 +126,48 @@ import java.util.ArrayDeque;
                 return true;
             }
         }
-        yybegin(text.endsWith("\n")
-                ? (nowdoc ? NOWDOC_BEGIN : HEREDOC_BEGIN)
-                : (nowdoc ? NOWDOC : HEREDOC));
+        yybegin(nowdoc ? NOWDOC_BEGIN : HEREDOC_BEGIN);
         return false;
+    }
+
+    /** 行首一旦消费正文或开始插值，就不能再把同行后续内容识别成结束标签。 */
+    private void leaveHeredocBeginning() {
+        if (yystate() == HEREDOC_BEGIN) yybegin(HEREDOC);
+    }
+
+    /** 文本 token 保留原文；行首状态严格跟随实际消费的换行。 */
+    private Symbol encapsedToken() {
+        int state = yystate();
+        if (state == HEREDOC || state == HEREDOC_BEGIN || state == NOWDOC || state == NOWDOC_BEGIN) {
+            String text = yytext();
+            boolean lineStart = text.endsWith("\r") || text.endsWith("\n");
+            boolean nowdoc = state == NOWDOC || state == NOWDOC_BEGIN;
+            yybegin(nowdoc ? (lineStart ? NOWDOC_BEGIN : NOWDOC)
+                    : (lineStart ? HEREDOC_BEGIN : HEREDOC));
+        }
+        return tk(PhpSymbols.T_ENCAPSED_AND_WHITESPACE);
+    }
+
+    /** 候选字符串只扫描到首个未转义的引号；插值交由相应词法状态继续处理。 */
+    private boolean containsInterpolation(String text) {
+        int quote = text.charAt(0) == '"' ? 0 : 1;
+        for (int i = quote + 1; i < text.length() - 1; i++) {
+            char c = text.charAt(i);
+            if (c == '\\') {
+                i++;
+            } else if (c == '$') {
+                int next = text.codePointAt(i + 1);
+                if (next == '{' || isLabelStart(next)) return true;
+            } else if (c == '{' && text.charAt(i + 1) == '$') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isLabelStart(int c) {
+        return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+                || c >= 0x80 && c <= 0xffff;
     }
 
     /** TOKENS 单字符符号 -> 终结符常量 */
@@ -214,22 +252,20 @@ LABEL          = [a-zA-Z_\x80-\uffff][a-zA-Z0-9_\x80-\uffff]*
 /* 单字符 TOKENS（zend 的单字符操作符类，见下方 TOKENS 定义），{ } ` 单独处理 */
 TOKENS         = [;:,\.\[\]()|\^&+\-*\/=%!~\$<>?@]
 
-/* 双引号/反引号/heredoc 的普通文本段：
- * 停止条件与 zend 一致：$标签、"${"、"{$"、换行（heredoc 需要做结束标签判定）。
- * "$x"/"{x" 中 x 是非触发字符时按普通文本继续；引号/反引号排除是为了不吃掉字符串结束符。 */
-DQ_TXT   = ([^$\r\n{\\"]|\\[^\r]|"$"[^a-zA-Z_\x80-\uffff\r\n\"]|[{][^$"])
-BQ_TXT   = ([^$\r\n{\\`]|\\[^\r]|"$"[^a-zA-Z_\x80-\uffff\r\n\"`]|[{][^$`])
-HDOC_TXT = ([^$\r\n{\\]|\\[^\r]|"$"[^a-zA-Z_\x80-\uffff\r\n{]|[{][^$])
+/* $ 和 { 留给公共插值规则或单字符文本规则，避免 $$name、{{$name} 等重叠触发被吞掉。
+ * 转义不能跨过换行，以便 heredoc 总能在下一行检查结束标签。 */
+DQ_TXT   = ([^$\r\n{\\\"]|\\[^\r\n])
+BQ_TXT   = ([^$\r\n{\\`]|\\[^\r\n])
+HDOC_TXT = ([^$\r\n{\\]|\\[^\r\n])
 
 /* 行注释：内容里 "?>" 会提前结束注释（zend 语义），\?* 处理结尾连续问号 */
 LINE_COMMENT_TAIL = ([^?\r\n]|"?"[^>\r\n])*\?*
 
-/* 不含插值的双引号字符串整体一个 token（zend 的 T_CONSTANT_ENCAPSED_STRING 快路径）；
- * 含插值时该规则整体匹配失败，走 "\"" + encaps_list + "\"" 的拆分路径 */
-CONST_DQ_STR   = [bB]?\"([^$\\{]|\\[^\r]|"$"[^a-zA-Z_\x80-\uffff{]|[{][^$])*\"
+/* 先匹配到首个未转义引号，再检查插值；不能让候选跨过其它表达式中的引号。 */
+CONST_DQ_STR   = [bB]?\"([^\"\\]|\\[^])*\"
 
 /* heredoc 起始：<<< [空白] (LABEL | 'LABEL' | [lL][aA][bB][eE][lL]) 换行 */
-HEREDOC_OPEN   = [bB]?"<<<"{TABS}({LABEL}|[']{LABEL}[']|["]{LABEL}["]){NEWLINE}
+HEREDOC_OPEN   = [bB]?"<<<"{TABS}({LABEL}|[']{LABEL}[']|\"{LABEL}\"){NEWLINE}
 
 %eofval{
     return symbolFactory.newSymbol(PhpSymbols.EOF, Location.NO_LOCATION);
@@ -400,7 +436,14 @@ HEREDOC_OPEN   = [bB]?"<<<"{TABS}({LABEL}|[']{LABEL}[']|["]{LABEL}["]){NEWLINE}
   ">>"      { return tk(PhpSymbols.T_SR); }
 
   /* -------- 字符串 -------- */
-  {CONST_DQ_STR}  { return symbol(PhpSymbols.T_CONSTANT_ENCAPSED_STRING, yytext()); }
+  {CONST_DQ_STR}  {
+      String text = yytext();
+      if (!containsInterpolation(text)) return tk(PhpSymbols.T_CONSTANT_ENCAPSED_STRING);
+      int openingLength = text.charAt(0) == '"' ? 1 : 2;
+      yypushback(yylength() - openingLength);
+      yybegin(DQ);
+      return tk(PhpSymbols.DQUOTE);
+  }
   [bB]?\"         { yybegin(DQ); return tk(PhpSymbols.DQUOTE); }
   [bB]?[']([^'\\]|\\[^])*['] {
                   return symbol(PhpSymbols.T_CONSTANT_ENCAPSED_STRING, yytext()); }
@@ -493,65 +536,65 @@ HEREDOC_OPEN   = [bB]?"<<<"{TABS}({LABEL}|[']{LABEL}[']|["]{LABEL}["]){NEWLINE}
   /* "$var->prop"：-> 后必须是标签起始字符（匹配后回退 3 字符等价 zend 的 yyless） */
   "$"{LABEL}"->"[a-zA-Z_\x80-\uffff] {
       yypushback(3);
+      leaveHeredocBeginning();
       pushState(LOOKING_PROPERTY);
       return symbol(PhpSymbols.T_VARIABLE, yytext().substring(1));
   }
   /* "$var["：进入偏移状态 */
   "$"{LABEL}"[" {
       yypushback(1);
+      leaveHeredocBeginning();
       pushState(VAR_OFFSET);
       return symbol(PhpSymbols.T_VARIABLE, yytext().substring(1));
   }
-  "$"{LABEL}  { return symbol(PhpSymbols.T_VARIABLE, yytext().substring(1)); }
-  "${"        { pushState(LOOKING_VARNAME);
+  "$"{LABEL}  { leaveHeredocBeginning();
+                return symbol(PhpSymbols.T_VARIABLE, yytext().substring(1)); }
+  "${"        { leaveHeredocBeginning(); pushState(LOOKING_VARNAME);
                 return tk(PhpSymbols.T_DOLLAR_OPEN_CURLY_BRACES); }
-  "{$"        { yypushback(1); pushState(SCRIPTING);
+  "{$"        { yypushback(1); leaveHeredocBeginning(); pushState(SCRIPTING);
                 return tk(PhpSymbols.T_CURLY_OPEN); }
 }
 
 <DQ> {
   \"          { yybegin(SCRIPTING); return tk(PhpSymbols.DQUOTE); }
-  {DQ_TXT}+   { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  "$"|"{"     { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  "\n"|"\r"   { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  {DQ_TXT}+   { return encapsedToken(); }
+  "$"|"{"     { return encapsedToken(); }
+  {NEWLINE}   { return encapsedToken(); }
 }
 
 <BQ> {
   [`]         { yybegin(SCRIPTING); return tk(PhpSymbols.BACKTICK); }
-  {BQ_TXT}+   { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  "$"|"{"     { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  "\n"|"\r"   { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  {BQ_TXT}+   { return encapsedToken(); }
+  "$"|"{"     { return encapsedToken(); }
+  {NEWLINE}   { return encapsedToken(); }
 }
 
 /* ============ heredoc / nowdoc 正文 ============ */
 
 /* 行首：结束标签判定 */
 <HEREDOC_BEGIN> {
-  {LABEL}(";")?[\r\n] { if (finishHeredoc(false)) return tk(PhpSymbols.T_END_HEREDOC);
-                        else return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  {LABEL}(";")?{NEWLINE} { if (finishHeredoc(false)) return tk(PhpSymbols.T_END_HEREDOC);
+                          else return encapsedToken(); }
 }
 <NOWDOC_BEGIN> {
-  {LABEL}(";")?[\r\n] { if (finishHeredoc(true)) return tk(PhpSymbols.T_END_HEREDOC);
-                        else return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  {LABEL}(";")?{NEWLINE} { if (finishHeredoc(true)) return tk(PhpSymbols.T_END_HEREDOC);
+                          else return encapsedToken(); }
 }
 
 /* heredoc 正文有插值（公共规则已覆盖 $/${/{$）。
- * 整行文本（含换行）作为一个 token——zend 语义：换行属于内容，
- * 只有当下一行是结束标签时才由 T_END_HEREDOC 吸收。 */
+ * 换行原文保留在文本 token 内，后处理负责去掉结束标签前的最后一个换行。 */
 <HEREDOC, HEREDOC_BEGIN> {
-  {HDOC_TXT}*{NEWLINE}  { yybegin(HEREDOC_BEGIN);
-                          return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  {HDOC_TXT}+           { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  "$"|"{"               { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  {HDOC_TXT}*{NEWLINE}  { return encapsedToken(); }
+  {HDOC_TXT}+           { return encapsedToken(); }
+  "$"|"{"               { return encapsedToken(); }
 }
 /* nowdoc 无插值，纯文本整行（含换行）到行尾 */
 <NOWDOC, NOWDOC_BEGIN> {
-  [^\r\n]*{NEWLINE}     { yybegin(NOWDOC_BEGIN);
-                          return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
-  [^\r\n]+              { return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext()); }
+  [^\r\n]*{NEWLINE}     { return encapsedToken(); }
+  [^\r\n]+              { return encapsedToken(); }
 }
 
 /* 兜底：上述规则未覆盖的单字符（如 EOF 前的孤立反斜杠）按文本处理 */
 <DQ, BQ, HEREDOC, HEREDOC_BEGIN, NOWDOC, NOWDOC_BEGIN> [^] {
-    return symbol(PhpSymbols.T_ENCAPSED_AND_WHITESPACE, yytext());
+    return encapsedToken();
 }

@@ -8,6 +8,7 @@ import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
 import top.kmar.php.model.SyntaxExpression;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -61,7 +62,7 @@ class BuiltinConversionTest {
         assertEquals("value", fixedName(property.property()));
         IrIndex index = assertInstanceOf(IrIndex.class, property.receiver());
         assertVariable(index.base(), "missing");
-        assertLiteral(index.index(), LiteralKind.STRING, "'key'");
+        assertString(index.index(), "key");
         assertCall(assertInstanceOf(IrEmptyCheck.class, expression("empty(next())")).expression(), "next", 0);
         IrBinary sum = assertInstanceOf(IrBinary.class,
                 assertInstanceOf(IrEmptyCheck.class, expression("empty(1 + 2)")).expression());
@@ -113,7 +114,7 @@ class BuiltinConversionTest {
         assertEquals(CastKind.STRING, outer.kind());
         IrCast inner = assertInstanceOf(IrCast.class, outer.expression());
         assertEquals(CastKind.INTEGER, inner.kind());
-        assertLiteral(inner.expression(), LiteralKind.STRING, "'12.5'");
+        assertString(inner.expression(), "12.5");
         IrCast unset = assertInstanceOf(IrCast.class, expression("(unset) next()"));
         assertEquals(CastKind.UNSET, unset.kind());
         assertCall(unset.expression(), "next", 0);
@@ -180,20 +181,20 @@ class BuiltinConversionTest {
             IrInclude missing = assertInstanceOf(IrInclude.class,
                     expression(keyword + " '/file-that-does-not-exist.php'"));
             assertEquals(kind, missing.kind());
-            assertLiteral(missing.expression(), LiteralKind.STRING, "'/file-that-does-not-exist.php'");
+            assertString(missing.expression(), "/file-that-does-not-exist.php");
         });
         IrInclude joined = assertInstanceOf(IrInclude.class, expression("include 'dir/' . pathName()"));
         IrBinary concat = assertInstanceOf(IrBinary.class, joined.expression());
         assertEquals(BinaryOperator.CONCAT, concat.operator());
-        assertLiteral(concat.left(), LiteralKind.STRING, "'dir/'");
+        assertString(concat.left(), "dir/");
         assertCall(concat.right(), "pathName", 0);
     }
 
     // eval 只保存实参，即使内容不是 PHP 也不能在本阶段重新解析或执行。
     @Test
     void keepsEvalArgumentsOpaqueAndPreservesNesting() {
-        assertLiteral(assertInstanceOf(IrEval.class, expression("EvAl('not valid PHP {{{')")).expression(),
-                LiteralKind.STRING, "'not valid PHP {{{'");
+        assertString(assertInstanceOf(IrEval.class, expression("EvAl('not valid PHP {{{')")).expression(),
+                "not valid PHP {{{");
         IrErrorSuppress suppressed = assertInstanceOf(IrErrorSuppress.class, expression("@eval(makeCode($saved = next()))"));
         IrEval eval = assertInstanceOf(IrEval.class, suppressed.expression());
         IrCall call = assertCall(eval.expression(), "makeCode", 1);
@@ -211,8 +212,8 @@ class BuiltinConversionTest {
             assertLiteral(assertInstanceOf(IrExit.class, expression(keyword + "(null)")).expression(),
                     LiteralKind.NULL, "null");
             assertInteger(assertInstanceOf(IrExit.class, expression(keyword + "(3)")).expression(), 3);
-            assertLiteral(assertInstanceOf(IrExit.class, expression(keyword + "('message')")).expression(),
-                    LiteralKind.STRING, "'message'");
+            assertString(assertInstanceOf(IrExit.class, expression(keyword + "('message')")).expression(),
+                    "message");
         }
     }
 
@@ -330,9 +331,9 @@ class BuiltinConversionTest {
     // 新的外壳不掩盖尚未支持的子树，isset/empty 等读取上下文也不允许空下标。
     @Test
     void rejectsUnsupportedOperandsInsideEveryBuiltinExpression() {
-        for (String code : List.of("isset(__LINE__)", "empty(__LINE__)", "(int) __LINE__",
-                "@__LINE__", "print __LINE__", "include __LINE__", "include_once __LINE__",
-                "require __LINE__", "require_once __LINE__", "eval(__LINE__)", "exit(__LINE__)",
+        for (String code : List.of("isset((new class {}))", "empty((new class {}))", "(int) (new class {})",
+                "@(new class {})", "print (new class {})", "include (new class {})", "include_once (new class {})",
+                "require (new class {})", "require_once (new class {})", "eval((new class {}))", "exit((new class {}))",
                 "isset($a[])", "empty($a[])", "(int) $a[]", "@$a[]", "print $a[]",
                 "include $a[]", "eval($a[])", "die($a[])")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
@@ -384,6 +385,11 @@ class BuiltinConversionTest {
         IrLiteral literal = assertInstanceOf(IrLiteral.class, expression);
         assertEquals(kind, literal.kind());
         assertEquals(lexeme, literal.lexeme());
+    }
+
+    private static void assertString(IrExpression expression, String value) {
+        assertArrayEquals(value.getBytes(StandardCharsets.UTF_8),
+                assertInstanceOf(IrStringLiteral.class, expression).value().toByteArray());
     }
 
     private static IrStatement only(String code) {
