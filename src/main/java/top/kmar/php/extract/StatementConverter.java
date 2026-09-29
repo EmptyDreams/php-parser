@@ -11,7 +11,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-/** 只在适配层理解语句包装和两种 if 文法，输出不再包含 CUP 节点。 */
+/** 只在适配层理解语句包装和普通／冒号文法，输出不再包含 CUP 节点。 */
 final class StatementConverter {
     private final ConversionContext context;
     private final ExpressionConverter expressions;
@@ -56,6 +56,37 @@ final class StatementConverter {
                     context.required(stmt.getIfStmt(), stmt, path + ".ifStmt"), path + ".ifStmt");
             case NodeStatement.AltIf stmt -> alternateIf(
                     context.required(stmt.getAltIfStmt(), stmt, path + ".altIfStmt"), path + ".altIfStmt");
+            case NodeStatement.While stmt -> new IrWhile(
+                    expressions.convert(context.required(stmt.getCond(), stmt, path + ".cond"), path + ".cond"),
+                    whileBody(context.required(stmt.getWhileBody(), stmt, path + ".whileBody"), path + ".whileBody"),
+                    context.source(stmt));
+            case NodeStatement.DoWhile stmt -> new IrDoWhile(
+                    statementBlock(context.required(stmt.getBody(), stmt, path + ".body"), path + ".body"),
+                    expressions.convert(context.required(stmt.getCond(), stmt, path + ".cond"), path + ".cond"),
+                    context.source(stmt));
+            case NodeStatement.For stmt -> new IrFor(
+                    expressionList(stmt.getForInit(), stmt, path + ".forInit"),
+                    expressionList(stmt.getForCond(), stmt, path + ".forCond"),
+                    expressionList(stmt.getForStep(), stmt, path + ".forStep"),
+                    forBody(context.required(stmt.getForBody(), stmt, path + ".forBody"), path + ".forBody"),
+                    context.source(stmt));
+            case NodeStatement.Foreach stmt -> new IrForeach(
+                    expressions.convert(context.required(stmt.getIterable(), stmt, path + ".iterable"),
+                            path + ".iterable"),
+                    null, foreachTarget(context.required(stmt.getVar(), stmt, path + ".var"), path + ".var"),
+                    foreachBody(context.required(stmt.getForeachBody(), stmt, path + ".foreachBody"),
+                            path + ".foreachBody"), context.source(stmt));
+            case NodeStatement.ForeachKV stmt -> new IrForeach(
+                    expressions.convert(context.required(stmt.getIterable(), stmt, path + ".iterable"),
+                            path + ".iterable"),
+                    foreachTarget(context.required(stmt.getKey(), stmt, path + ".key"), path + ".key"),
+                    foreachTarget(context.required(stmt.getValueVar(), stmt, path + ".valueVar"), path + ".valueVar"),
+                    foreachBody(context.required(stmt.getForeachBody(), stmt, path + ".foreachBody"),
+                            path + ".foreachBody"), context.source(stmt));
+            case NodeStatement.Break stmt -> new IrBreak(stmt.getLevels() == null ? null
+                    : expressions.convert(stmt.getLevels(), path + ".levels"), context.source(stmt));
+            case NodeStatement.Continue stmt -> new IrContinue(stmt.getLevels() == null ? null
+                    : expressions.convert(stmt.getLevels(), path + ".levels"), context.source(stmt));
             default -> throw context.error(node, path, "不支持的语句或声明结构：" + node.getNodeName());
         };
     }
@@ -81,6 +112,51 @@ final class StatementConverter {
     private IrBlock statementBlock(NodeStatement node, String path) {
         IrStatement converted = statement(node, path);
         return converted instanceof IrBlock block ? block : new IrBlock(List.of(converted), converted.source());
+    }
+
+    /** 三组 for 列表独立转换；空列表合法，但缺少列表包装或列表元素并不合法。 */
+    private List<IrExpression> expressionList(@Nullable NodeListNodeExpr list, AstNode origin, String path) {
+        context.required(list, origin, path);
+        var nodes = context.elements(list.getValue(), list, path);
+        var result = new ArrayList<IrExpression>(nodes.size());
+        for (int i = 0; i < nodes.size(); i++) {
+            result.add(expressions.convert(nodes.get(i), path + "[" + i + "]"));
+        }
+        return result;
+    }
+
+    private IrBlock whileBody(NodeWhileStatement node, String path) {
+        return switch (node) {
+            case NodeWhileStatement.Body body -> statementBlock(
+                    context.required(body.getBody(), body, path + ".body"), path + ".body");
+            case NodeWhileStatement.AltBody body -> innerBlock(body.getStmts(), body, path + ".stmts");
+            default -> throw context.error(node, path, "无法识别的 while 循环体");
+        };
+    }
+
+    private IrBlock forBody(NodeForStatement node, String path) {
+        return switch (node) {
+            case NodeForStatement.Body body -> statementBlock(
+                    context.required(body.getBody(), body, path + ".body"), path + ".body");
+            case NodeForStatement.AltBody body -> innerBlock(body.getStmts(), body, path + ".stmts");
+            default -> throw context.error(node, path, "无法识别的 for 循环体");
+        };
+    }
+
+    private IrBlock foreachBody(NodeForeachStatement node, String path) {
+        return switch (node) {
+            case NodeForeachStatement.Body body -> statementBlock(
+                    context.required(body.getBody(), body, path + ".body"), path + ".body");
+            case NodeForeachStatement.AltBody body -> innerBlock(body.getStmts(), body, path + ".stmts");
+            default -> throw context.error(node, path, "无法识别的 foreach 循环体");
+        };
+    }
+
+    private IrAssignmentTarget foreachTarget(NodeForeachVariable node, String path) {
+        if (!(node instanceof NodeForeachVariable.Var)) {
+            throw context.error(node, path, "foreach 目标暂不支持引用或解构");
+        }
+        return expressions.assignmentTarget(context.required(node.getV(), node, path + ".v"), path + ".v");
     }
 
     private IrIf standardIf(NodeIfStmt node, String path) {

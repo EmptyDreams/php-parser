@@ -215,6 +215,175 @@ class SyntaxConverterContractTest {
         branches.clear();
         assertEquals(1, conditional.branches().size());
         assertThrows(UnsupportedOperationException.class, conditional.branches()::clear);
+
+        var entries = new ArrayList<IrArrayEntry>();
+        entries.add(new IrArrayEntry(null, new IrIntegerLiteral(2, source), source));
+        var array = new IrArrayLiteral(entries, source);
+        entries.clear();
+        assertEquals(1, array.entries().size());
+        assertThrows(UnsupportedOperationException.class, array.entries()::clear);
+
+        var initializers = new ArrayList<IrExpression>(List.of(new IrIntegerLiteral(1, source)));
+        var conditions = new ArrayList<IrExpression>(List.of(new IrIntegerLiteral(2, source)));
+        var updates = new ArrayList<IrExpression>(List.of(new IrIntegerLiteral(3, source)));
+        var loop = new IrFor(initializers, conditions, updates, block, source);
+        initializers.clear();
+        conditions.clear();
+        updates.clear();
+        assertEquals(1, assertInstanceOf(IrIntegerLiteral.class, loop.initializers().getFirst()).value());
+        assertEquals(2, assertInstanceOf(IrIntegerLiteral.class, loop.conditions().getFirst()).value());
+        assertEquals(3, assertInstanceOf(IrIntegerLiteral.class, loop.updates().getFirst()).value());
+        assertThrows(UnsupportedOperationException.class, loop.initializers()::clear);
+        assertThrows(UnsupportedOperationException.class, loop.conditions()::clear);
+        assertThrows(UnsupportedOperationException.class, loop.updates()::clear);
+    }
+
+    // 数组默认值和完整过程式函数体共享转换规则，跨节点组合仍保留源码且不修改声明模型。
+    @Test
+    void convertsProceduralBodiesWithoutMutatingDeclarationsOrLosingSources() throws ReflectiveOperationException {
+        NodeProgram parsed = (NodeProgram) Main.parse("""
+                <?php
+                function collect($values = [1, 2, 3]) {
+                    $result = [];
+                    for ($i = 0; $i < count($values); $i++) {
+                        if ($values[$i] < 0) continue;
+                        $result[] = $values[$i];
+                    }
+                    foreach ($result as $key => $value) {
+                        $result[$key] += 1;
+                    }
+                    while ($i > 0) { --$i; if ($i == 1) break; }
+                    do { $i--; } while ($i > 0);
+                    return $result;
+                }
+                """);
+        String before = parsed.toTreeString(false);
+        PhpFile file = DeclarationExtractor.extract(parsed, "procedural.php");
+        FunctionDefinition function = (FunctionDefinition) file.namespaceSections().getFirst().declarations().getFirst();
+        var originalStatements = List.copyOf(function.body().statements());
+        IrBlock body = SyntaxConverter.convertBody(function.body());
+        IrArrayLiteral defaults = assertInstanceOf(IrArrayLiteral.class,
+                SyntaxConverter.convertExpression(function.signature().parameters().getFirst().defaultValue()));
+        assertEquals(List.of(1L, 2L, 3L), defaults.entries().stream()
+                .map(entry -> assertInstanceOf(IrIntegerLiteral.class, entry.value()).value()).toList());
+
+        assertEquals(6, body.statements().size());
+        IrAssignment initialization = assertInstanceOf(IrAssignment.class,
+                assertInstanceOf(IrExpressionStatement.class, body.statements().get(0)).expression());
+        assertEquals("result", assertInstanceOf(IrVariableTarget.class, initialization.target()).name());
+        assertTrue(assertInstanceOf(IrArrayLiteral.class, initialization.value()).entries().isEmpty());
+        IrFor loop = assertInstanceOf(IrFor.class, body.statements().get(1));
+        assertEquals(UpdateOperator.POST_INCREMENT, assertInstanceOf(IrUpdate.class, loop.updates().getFirst()).operator());
+        assertEquals(2, loop.body().statements().size());
+        IrIf guard = assertInstanceOf(IrIf.class, loop.body().statements().get(0));
+        assertInstanceOf(IrContinue.class, guard.branches().getFirst().body().statements().getFirst());
+        IrAssignment append = assertInstanceOf(IrAssignment.class,
+                assertInstanceOf(IrExpressionStatement.class, loop.body().statements().get(1)).expression());
+        assertNull(assertInstanceOf(IrIndexTarget.class, append.target()).index());
+        assertEquals("i", assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrIndex.class, append.value()).index()).name());
+        IrForeach foreach = assertInstanceOf(IrForeach.class, body.statements().get(2));
+        assertEquals("key", assertInstanceOf(IrVariableTarget.class, foreach.keyTarget()).name());
+        assertEquals("value", assertInstanceOf(IrVariableTarget.class, foreach.valueTarget()).name());
+        IrCompoundAssignment compound = assertInstanceOf(IrCompoundAssignment.class,
+                assertInstanceOf(IrExpressionStatement.class, foreach.body().statements().getFirst()).expression());
+        assertEquals(CompoundAssignmentOperator.ADD, compound.operator());
+        assertEquals("key", assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrIndexTarget.class, compound.target()).index()).name());
+        IrWhile whileLoop = assertInstanceOf(IrWhile.class, body.statements().get(3));
+        assertEquals(UpdateOperator.PRE_DECREMENT, assertInstanceOf(IrUpdate.class,
+                assertInstanceOf(IrExpressionStatement.class, whileLoop.body().statements().getFirst()).expression()).operator());
+        IrDoWhile doLoop = assertInstanceOf(IrDoWhile.class, body.statements().get(4));
+        assertEquals(UpdateOperator.POST_DECREMENT, assertInstanceOf(IrUpdate.class,
+                assertInstanceOf(IrExpressionStatement.class, doLoop.body().statements().getFirst()).expression()).operator());
+        assertEquals("result", assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrReturn.class, body.statements().get(5)).value()).name());
+
+        assertEquals(function.body().source(), body.source());
+        assertAllSourceIds(body, "procedural.php");
+        assertAllSourceIds(defaults, "procedural.php");
+        assertNoAst(body, Collections.newSetFromMap(new IdentityHashMap<>()));
+        assertNoAst(defaults, Collections.newSetFromMap(new IdentityHashMap<>()));
+        assertEquals(before, parsed.toTreeString(false));
+        for (int i = 0; i < originalStatements.size(); i++) {
+            assertSame(originalStatements.get(i), function.body().statements().get(i));
+        }
+        assertSame(function, file.declarationIndex().findTopLevel(TopLevelKind.FUNCTION, "collect").getFirst());
+        assertEquals(body, SyntaxConverter.convertBody(function.body()));
+    }
+
+    // 更新、下标目标、数组条目均继承各自的 AST 范围，不把父节点的位置分发给所有子节点。
+    @Test
+    void preservesOriginalRangesForArrayEntriesAndUpdateTargets() throws ReflectiveOperationException {
+        NodeExpr parsed = parsedExpression("$a[1] += [2]");
+        NodeExprWithoutVariable original = parsed.getEv();
+        IrCompoundAssignment result = assertInstanceOf(IrCompoundAssignment.class,
+                SyntaxConverter.convertExpression(new SyntaxExpression(parsed, new SourceInfo("updates.php", null))));
+        assertEquals(sourceRange(original), result.source().range());
+        IrIndexTarget target = assertInstanceOf(IrIndexTarget.class, result.target());
+        assertEquals(sourceRange(original.getTarget().getCv()), target.source().range());
+        assertEquals(sourceRange(original.getTarget().getCv().getOffset()), target.index().source().range());
+        NodeDereferencableScalar originalArray = original.getValue().getEv().getScalar().getDs();
+        IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, result.value());
+        assertEquals(sourceRange(originalArray), array.source().range());
+        assertEquals(sourceRange(originalArray.getItems().getItems().getValue().getFirst().getPair()),
+                array.entries().getFirst().source().range());
+        assertAllSourceIds(result, "updates.php");
+    }
+
+    // 缺失列表、null 槽节点和缺失条目字段是损坏 AST，不能被当成空数组或尾逗号。
+    @Test
+    void rejectsMalformedArrayListsAndEntriesWithContext() {
+        var location = ComplexLocation.of(4, 2, 4, 8);
+        var nullSlot = new ArrayList<NodePossibleArrayPair>();
+        nullSlot.add(null);
+        for (NodeArrayPairList list : List.of(
+                new NodeArrayPairList.ArrayPairList(null, location),
+                new NodeArrayPairList.ArrayPairList(new NodeListNodePossibleArrayPair(null, location), location),
+                new NodeArrayPairList.ArrayPairList(new NodeListNodePossibleArrayPair(List.of(), location), location),
+                new NodeArrayPairList.ArrayPairList(new NodeListNodePossibleArrayPair(nullSlot, location), location))) {
+            var error = assertArrayFailure(list, location);
+            assertTrue(error.fieldPath().contains("items"));
+        }
+        for (NodeArrayPair pair : List.of(new NodeArrayPair.Value(null, location),
+                new NodeArrayPair.KeyValue(null, literal(location), location),
+                new NodeArrayPair.KeyValue(literal(location), null, location))) {
+            // 可选槽位的生成类名不稳定；手工提供同样的稳定字段契约。
+            var slot = new NodePossibleArrayPair() {
+                @Override public NodeArrayPair getPair() { return pair; }
+                @Override public boolean hasPair() { return true; }
+                @Override public ComplexLocation getLocation() { return location; }
+            };
+            var list = new NodeArrayPairList.ArrayPairList(
+                    new NodeListNodePossibleArrayPair(List.of(slot), location), location);
+            var error = assertArrayFailure(list, location);
+            assertTrue(error.fieldPath().endsWith(pair.getValue() == null ? ".value" : ".key"));
+        }
+        assertArrayFailure(null, location);
+    }
+
+    // 更新表达式的缺失目标、值或运算符应保留诊断上下文，不泄漏空指针或接受未知运算符。
+    @Test
+    void rejectsMalformedCompoundAssignmentsAndUpdatesWithContext() {
+        var location = ComplexLocation.of(5, 3, 5, 12);
+        NodeVariable target = parsedExpression("$a").getV();
+        NodeString plusEqual = new NodeString("+=", location);
+        for (NodeExprWithoutVariable node : List.of(
+                new NodeExprWithoutVariable.AssignOp(null, plusEqual, literal(location), location),
+                new NodeExprWithoutVariable.AssignOp(target, plusEqual, null, location),
+                new NodeExprWithoutVariable.AssignOp(target, null, literal(location), location),
+                new NodeExprWithoutVariable.AssignOp(target, new NodeString("??=", location), literal(location), location),
+                new NodeExprWithoutVariable.PostIncDec(null, new NodeString("++", location), location),
+                new NodeExprWithoutVariable.PostIncDec(target, null, location),
+                new NodeExprWithoutVariable.PreIncDec(new NodeString("+", location), target, location))) {
+            var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertExpression(
+                    new SyntaxExpression(new NodeExpr.ExprWithoutVariable(node, location),
+                            new SourceInfo("broken-update.php", null))));
+            assertEquals("broken-update.php", error.source().sourceId());
+            assertEquals(new SourceRange(5, 3, 5, 12), error.source().range());
+            assertTrue(error.fieldPath().startsWith("expression.ev."));
+            assertFalse(error.reason().isBlank());
+        }
     }
 
     // 新模型不携带 CUP AST；转换本身不会修改旧树、旧列表或旧声明索引。
@@ -247,7 +416,7 @@ class SyntaxConverterContractTest {
     void keepsFailureStateLocalToEachConversion() {
         var file = DeclarationExtractor.extract(Main.parse("""
                 <?php
-                function bad() { echo 1; while (true) {} return 2; }
+                function bad() { echo 1; switch (true) {} return 2; }
                 function good() { return 3; }
                 """));
         var declarations = file.namespaceSections().getFirst().declarations();
@@ -260,6 +429,18 @@ class SyntaxConverterContractTest {
         assertEquals(3, assertInstanceOf(IrIntegerLiteral.class,
                 assertInstanceOf(IrReturn.class, result.statements().getFirst()).value()).value());
         assertEquals(before, file.syntax().toTreeString(false));
+    }
+
+    private static SyntaxConversionException assertArrayFailure(NodeArrayPairList list, ComplexLocation location) {
+        var array = new NodeDereferencableScalar.ShortArray(new NodeString("[", location), list, location);
+        var expression = new NodeExpr.ExprWithoutVariable(new NodeExprWithoutVariable.Scalar(
+                new NodeScalar.DereferencableScalar(array, location), location), location);
+        var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertExpression(
+                new SyntaxExpression(expression, new SourceInfo("broken-array.php", null))));
+        assertEquals("broken-array.php", error.source().sourceId());
+        assertEquals(new SourceRange(4, 2, 4, 8), error.source().range());
+        assertFalse(error.reason().isBlank());
+        return error;
     }
 
     private static NodeExpr parsedExpression(String code) {

@@ -390,7 +390,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { while (true) {} }
+                function unrelated() { switch ($value) { default: ; } }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -418,9 +418,9 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
-                "[]", "array(1)", "$a[0]", "$a->p", "C::$p", "$$a",
+                "$a->p", "C::$p", "$$a",
                 "$callback()", "$a->run()", "C::run()", "f(...$args)",
-                "$a += 1", "$a =& $b", "++$a", "$a--", "(int) $a", "@f()",
+                "$a =& $b", "(int) $a", "@f()",
                 "function () {}", "\"$a\"", "__LINE__", "C::VALUE",
                 "new C", "clone $a", "print $a", "isset($a)", "yield 1",
                 "<<<EOT\nplain text\nEOT\n", "<<<'NOW'\nno $interpolation\nNOW\n",
@@ -435,20 +435,19 @@ class SyntaxConverterTest {
 
     // 文法中的 variable 也包括调用，但这些表达式不是本阶段允许的可写赋值目标。
     @Test
-    void rejectsNonSimpleAssignmentTargetsEvenWhenGrammarAcceptsThem() {
-        for (String code : List.of("f() = 1", "$a[0] = 1", "$a->p = 1", "C::$p = 1", "$$a = 1")) {
+    void rejectsUnsupportedAssignmentRootsEvenWhenGrammarAcceptsThem() {
+        for (String code : List.of("f() = 1", "$a->p = 1", "C::$p = 1", "$$a = 1")) {
             SyntaxExpression syntax = syntaxExpression(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertExpression(syntax), code);
         }
     }
 
-    // 循环、嵌套声明和其它非子集语句一律报错，不跳过其可执行内容。
+    // switch、嵌套声明和其它非子集语句一律报错，不跳过其可执行内容。
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "while ($a) {}", "do {} while ($a);", "for (;;) {}", "foreach ($a as $b) {}",
                 "switch ($a) { default: ; }", "throw $a;", "try {} finally {}",
-                "break;", "continue;", "global $a;", "unset($a);",
+                "global $a;", "unset($a);",
                 "function nested() {}", "class Nested {}", "goto end; end: ;")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);

@@ -1,6 +1,7 @@
 package top.kmar.php.extract;
 
 import java_cup.runtime.AstNode;
+import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.NameForm;
@@ -43,6 +44,9 @@ final class ExpressionConverter {
                     assignmentTarget(context.required(node.getTarget(), node, path + ".target"), path + ".target"),
                     convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
                     context.source(node));
+            case NodeExprWithoutVariable.AssignOp ignored -> compoundAssignment(node, path);
+            case NodeExprWithoutVariable.PreIncDec ignored -> update(node, path, true);
+            case NodeExprWithoutVariable.PostIncDec ignored -> update(node, path, false);
             case NodeExprWithoutVariable.Binary ignored -> binary(node, path);
             case NodeExprWithoutVariable.Unary ignored -> unary(node, path);
             case NodeExprWithoutVariable.Conditional ignored -> new IrConditional(
@@ -84,6 +88,41 @@ final class ExpressionConverter {
         };
         return new IrUnary(operator,
                 convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                context.source(node));
+    }
+
+    private IrCompoundAssignment compoundAssignment(NodeExprWithoutVariable node, String path) {
+        String spelling = context.text(node.getOp(), node, path + ".op");
+        CompoundAssignmentOperator operator = switch (spelling) {
+            case "+=" -> CompoundAssignmentOperator.ADD;
+            case "-=" -> CompoundAssignmentOperator.SUBTRACT;
+            case "*=" -> CompoundAssignmentOperator.MULTIPLY;
+            case "/=" -> CompoundAssignmentOperator.DIVIDE;
+            case "%=" -> CompoundAssignmentOperator.MODULO;
+            case "**=" -> CompoundAssignmentOperator.POWER;
+            case ".=" -> CompoundAssignmentOperator.CONCAT;
+            case "<<=" -> CompoundAssignmentOperator.SHIFT_LEFT;
+            case ">>=" -> CompoundAssignmentOperator.SHIFT_RIGHT;
+            case "&=" -> CompoundAssignmentOperator.BITWISE_AND;
+            case "|=" -> CompoundAssignmentOperator.BITWISE_OR;
+            case "^=" -> CompoundAssignmentOperator.BITWISE_XOR;
+            default -> throw context.error(node, path + ".op", "暂不支持的复合赋值运算符: " + spelling);
+        };
+        return new IrCompoundAssignment(operator,
+                assignmentTarget(context.required(node.getTarget(), node, path + ".target"), path + ".target"),
+                convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                context.source(node));
+    }
+
+    private IrUpdate update(NodeExprWithoutVariable node, String path, boolean prefix) {
+        String spelling = context.text(node.getOp(), node, path + ".op");
+        UpdateOperator operator = switch (spelling) {
+            case "++" -> prefix ? UpdateOperator.PRE_INCREMENT : UpdateOperator.POST_INCREMENT;
+            case "--" -> prefix ? UpdateOperator.PRE_DECREMENT : UpdateOperator.POST_DECREMENT;
+            default -> throw context.error(node, path + ".op", "无法识别的自增／自减运算符: " + spelling);
+        };
+        return new IrUpdate(operator,
+                assignmentTarget(context.required(node.getTarget(), node, path + ".target"), path + ".target"),
                 context.source(node));
     }
 
@@ -132,7 +171,7 @@ final class ExpressionConverter {
         return switch (node) {
             case NodeScalar.Int ignored -> numbers.convert(node, path);
             case NodeScalar.Float ignored -> numbers.convert(node, path);
-            case NodeScalar.DereferencableScalar ignored -> stringLiteral(
+            case NodeScalar.DereferencableScalar ignored -> dereferencableScalar(
                     context.required(node.getDs(), node, path + ".ds"), path + ".ds");
             case NodeScalar.Constant ignored -> constant(
                     context.required(node.getC(), node, path + ".c"), path + ".c");
@@ -140,12 +179,59 @@ final class ExpressionConverter {
         };
     }
 
-    private IrLiteral stringLiteral(NodeDereferencableScalar node, String path) {
-        if (!(node instanceof NodeDereferencableScalar.ConstantString)) {
-            throw context.error(node, path, "暂不支持数组字面量或无法识别的标量结构");
+    private IrExpression dereferencableScalar(NodeDereferencableScalar node, String path) {
+        return switch (node) {
+            case NodeDereferencableScalar.ConstantString ignored -> new IrLiteral(LiteralKind.STRING,
+                    context.text(node.getStr(), node, path + ".str"), context.source(node));
+            case NodeDereferencableScalar.LongArray ignored -> array(node, path, "array");
+            case NodeDereferencableScalar.ShortArray ignored -> array(node, path, "[");
+            default -> throw context.error(node, path, "无法识别的可下标访问标量结构");
+        };
+    }
+
+    private IrArrayLiteral array(NodeDereferencableScalar node, String path, String expectedMarker) {
+        String marker = context.text(node.getKw(), node, path + ".kw");
+        if (!expectedMarker.equals(marker.toLowerCase(Locale.ROOT))) {
+            throw context.error(node, path + ".kw", "数组字面量标记与结构不一致");
         }
-        return new IrLiteral(LiteralKind.STRING,
-                context.text(node.getStr(), node, path + ".str"), context.source(node));
+        NodeArrayPairList arrayPairs = context.required(node.getItems(), node, path + ".items");
+        if (!(arrayPairs instanceof NodeArrayPairList.ArrayPairList)) {
+            throw context.error(arrayPairs, path + ".items", "无法识别的数组条目列表");
+        }
+        var list = context.required(arrayPairs.getItems(), arrayPairs, path + ".items.items");
+        var slots = context.elements(list.getValue(), arrayPairs, path + ".items.items");
+        if (slots.isEmpty()) {
+            throw context.error(arrayPairs, path + ".items.items", "数组语法至少需要一个槽位包装");
+        }
+        var entries = new ArrayList<IrArrayEntry>();
+        for (int i = 0; i < slots.size(); i++) {
+            NodePossibleArrayPair slot = slots.get(i);
+            String entryPath = path + ".items.items[" + i + "].pair";
+            // 可空槽位只有未命名的生成变体，读取稳定字段，不依赖其哈希类名。
+            NodeArrayPair pair = slot.getPair();
+            if (pair == null) {
+                // [] 是单个空槽，[value,] 则只有最后一个槽为空；其它空槽不能静默丢弃。
+                if (i != slots.size() - 1) {
+                    throw context.error(slot, entryPath, "数组构造中不允许空条目");
+                }
+                continue;
+            }
+            entries.add(arrayEntry(pair, entryPath));
+        }
+        return new IrArrayLiteral(entries, context.source(node));
+    }
+
+    private IrArrayEntry arrayEntry(NodeArrayPair node, String path) {
+        return switch (node) {
+            case NodeArrayPair.Value ignored -> new IrArrayEntry(null,
+                    convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                    context.source(node));
+            case NodeArrayPair.KeyValue ignored -> new IrArrayEntry(
+                    convert(context.required(node.getKey(), node, path + ".key"), path + ".key"),
+                    convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                    context.source(node));
+            default -> throw context.error(node, path, "暂不支持引用数组条目、解构或无法识别的数组条目");
+        };
     }
 
     private IrExpression constant(NodeConstant node, String path) {
@@ -182,20 +268,83 @@ final class ExpressionConverter {
             }
             case NodeCallableVariable.FunctionCall ignored -> call(
                     context.required(callable.getCall(), callable, path + ".cv.call"), path + ".cv.call");
-            default -> throw context.error(callable, path + ".cv", "暂不支持下标、属性或方法调用");
+            case NodeCallableVariable.Index ignored -> new IrIndex(
+                    dereferencable(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
+                    readIndex(callable.getOffset(), callable, path + ".cv.offset"), context.source(callable));
+            case NodeCallableVariable.ConstantIndex ignored -> new IrIndex(
+                    constant(context.required(callable.getC(), callable, path + ".cv.c"), path + ".cv.c"),
+                    readIndex(callable.getOffset(), callable, path + ".cv.offset"), context.source(callable));
+            case NodeCallableVariable.CurlyIndex ignored -> new IrIndex(
+                    dereferencable(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
+                    readIndex(callable.getE(), callable, path + ".cv.e"), context.source(callable));
+            default -> throw context.error(callable, path + ".cv", "暂不支持属性、方法调用或无法识别的变量结构");
         };
     }
 
-    private IrVariableTarget assignmentTarget(NodeVariable node, String path) {
+    private IrExpression dereferencable(NodeDereferencable node, String path) {
+        return switch (node) {
+            case NodeDereferencable.Var ignored -> variable(
+                    context.required(node.getV(), node, path + ".v"), path + ".v");
+            case NodeDereferencable.Paren ignored -> convert(
+                    context.required(node.getE(), node, path + ".e"), path + ".e");
+            case NodeDereferencable.Scalar ignored -> dereferencableScalar(
+                    context.required(node.getDs(), node, path + ".ds"), path + ".ds");
+            default -> throw context.error(node, path, "无法识别的下标基础表达式");
+        };
+    }
+
+    private IrExpression readIndex(@Nullable NodeExpr index, AstNode origin, String path) {
+        if (index == null) throw context.error(origin, path, "读取下标时不能省略索引");
+        return convert(index, path);
+    }
+
+    /** 普通赋值、复合赋值、更新及 foreach 共用的目标转换，目标链始终以简单变量为根。 */
+    IrAssignmentTarget assignmentTarget(NodeVariable node, String path) {
         if (!(node instanceof NodeVariable.CallableVariable)) {
-            throw context.error(node, path, "赋值目标仅支持简单命名变量");
+            throw context.error(node, path, "可写目标仅支持简单变量及其下标链");
         }
         NodeCallableVariable callable = context.required(node.getCv(), node, path + ".cv");
-        if (!(callable instanceof NodeCallableVariable.SimpleVar)) {
-            throw context.error(callable, path, "赋值目标仅支持简单命名变量");
-        }
-        NodeSimpleVariable simple = context.required(callable.getSv(), callable, path + ".cv.sv");
-        return new IrVariableTarget(variableName(simple, path + ".cv.sv"), context.source(simple));
+        return switch (callable) {
+            case NodeCallableVariable.SimpleVar ignored -> {
+                NodeSimpleVariable simple = context.required(callable.getSv(), callable, path + ".cv.sv");
+                yield new IrVariableTarget(variableName(simple, path + ".cv.sv"), context.source(simple));
+            }
+            case NodeCallableVariable.Index ignored -> new IrIndexTarget(
+                    dereferencableTarget(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
+                    callable.getOffset() == null ? null : convert(callable.getOffset(), path + ".cv.offset"),
+                    context.source(callable));
+            case NodeCallableVariable.CurlyIndex ignored -> new IrIndexTarget(
+                    dereferencableTarget(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
+                    convert(context.required(callable.getE(), callable, path + ".cv.e"), path + ".cv.e"),
+                    context.source(callable));
+            default -> throw context.error(callable, path + ".cv", "可写目标仅支持简单变量及其下标链");
+        };
+    }
+
+    private IrAssignmentTarget dereferencableTarget(NodeDereferencable node, String path) {
+        return switch (node) {
+            case NodeDereferencable.Var ignored -> assignmentTarget(
+                    context.required(node.getV(), node, path + ".v"), path + ".v");
+            case NodeDereferencable.Paren ignored -> expressionTarget(
+                    context.required(node.getE(), node, path + ".e"), path + ".e");
+            default -> throw context.error(node, path, "可写下标链必须以简单变量为根");
+        };
+    }
+
+    private IrAssignmentTarget expressionTarget(NodeExpr node, String path) {
+        return switch (node) {
+            case NodeExpr.VariableExpr ignored -> assignmentTarget(
+                    context.required(node.getV(), node, path + ".v"), path + ".v");
+            case NodeExpr.ExprWithoutVariable ignored -> {
+                NodeExprWithoutVariable expression = context.required(node.getEv(), node, path + ".ev");
+                if (!(expression instanceof NodeExprWithoutVariable.Paren)) {
+                    throw context.error(expression, path + ".ev", "可写下标链必须以简单变量为根");
+                }
+                yield expressionTarget(context.required(expression.getExpr(), expression, path + ".ev.expr"),
+                        path + ".ev.expr");
+            }
+            default -> throw context.error(node, path, "无法识别的可写目标表达式包装");
+        };
     }
 
     private String variableName(NodeSimpleVariable node, String path) {
