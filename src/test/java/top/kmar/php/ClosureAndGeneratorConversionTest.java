@@ -354,15 +354,16 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(inner.captures().isEmpty());
     }
 
-    // 新增外壳不吞掉未支持的子树；匿名类和嵌套命名声明继续明确失败。
+    // 新增外壳不吞掉未支持的子树；反引号表达式和嵌套命名声明继续明确失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewExpressionPosition() {
-        for (String code : List.of("function($value = (new class {})) {}", "function() { (new class {}); }",
-                "function() { return function() { (new class {}); }; }",
-                "function() { global ${(new class {})}; }",
-                "function() { static $value = (new class {}); }", "function() { function nested() {} }",
-                "function() { class Nested {} }", "function() { return new class {}; }",
-                "yield (new class {})", "yield (new class {}) => 1", "yield 1 => (new class {})", "yield from (new class {})")) {
+        for (String code : List.of("function($value = (`echo sentinel`)) {}", "function() { (`echo sentinel`); }",
+                "function() { return function() { (`echo sentinel`); }; }",
+                "function() { global ${(`echo sentinel`)}; }",
+                "function() { static $value = (`echo sentinel`); }", "function() { function nested() {} }",
+                "function() { class Nested {} }", "function() { return `echo sentinel`; }",
+                "yield (`echo sentinel`)", "yield (`echo sentinel`) => 1", "yield 1 => (`echo sentinel`)",
+                "yield from (`echo sentinel`)")) {
             assertRejected(code);
         }
     }

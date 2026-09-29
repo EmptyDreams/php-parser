@@ -309,10 +309,13 @@ class ObjectConversionTest {
         }
     }
 
-    // 动态访问与实参解包已有专门测试；匿名类仍位于当前转换子集之外。
+    // 匿名实例化保留独立定义，空类的成员列表不会伪装成具名类引用。
     @Test
-    void rejectsAnonymousClasses() {
-        assertRejected("new class {}");
+    void convertsEmptyAnonymousClassDefinitions() {
+        IrNewAnonymous instance = assertInstanceOf(IrNewAnonymous.class, expression("new class {}"));
+        assertTrue(instance.definition().members().isEmpty());
+        assertNotNull(instance.source().range());
+        assertNotNull(instance.definition().source().range());
     }
 
     // 常量、字面量、运算或临时对象不作为写根；调用虽可接后续访问但不能独立赋值。

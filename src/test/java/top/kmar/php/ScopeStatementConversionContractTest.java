@@ -183,7 +183,7 @@ class ScopeStatementConversionContractTest {
     // 新语句外壳不吞掉未支持表达式，诊断包含全局名、初始化、指令值或语句体的完整路径。
     @Test
     void propagatesUnsupportedNestedExpressionsWithFieldPaths() {
-        NodeExpr unsupported = parsedExpression("new class {}");
+        NodeExpr unsupported = parsedExpression("`echo sentinel`");
         assertFailure(globals(new NodeSimpleVariable.IndirectVar(unsupported, ENTRY)), ".globalVars[0].e", false);
         assertFailure(statics(new NodeStaticVar.StaticVarWithDefault(token("value", LEAF), unsupported, ENTRY)),
                 ".staticVars[0].defaultValue", false);
@@ -345,7 +345,7 @@ class ScopeStatementConversionContractTest {
                     declare(Custom = $value) { goto Finish; Finish: ; }
                     declare(ticks = 1);
                 }
-                function unsupported() { static $value = new class {}; }
+                function unsupported() { static $value = `echo sentinel`; }
                 """), "scope.php");
         var declarations = file.namespaceSections().getFirst().declarations();
         var function = (FunctionDefinition) declarations.getFirst();

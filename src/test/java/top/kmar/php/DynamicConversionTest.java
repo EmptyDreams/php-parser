@@ -401,14 +401,14 @@ class DynamicConversionTest {
         assertCall(assignment.value(), "rhs");
     }
 
-    // 新结构不会掩盖未支持子树；匿名类在任意名称、类引用或实参中都明确失败。
+    // 新结构不会掩盖未支持子树；反引号表达式在任意名称、类引用或实参中都明确失败。
     @Test
     void rejectsUnsupportedSubtreesInEveryNewPosition() {
-        for (String code : List.of("${(new class {})}", "$obj->{(new class {})}", "$obj->{(new class {})}()",
-                "Box::${(new class {})}", "Box::{(new class {})}()", "((new class {}))()", "((new class {}))::run()",
-                "((new class {}))::$p", "((new class {}))::VALUE", "((new class {}))::class", "new ${(new class {})}",
-                "$value instanceof ${(new class {})}", "$callback((new class {}))", "$callback(...(new class {}))",
-                "$obj->$method(...(new class {}))", "$type::$method(...(new class {}))", "new $type(...(new class {}))")) {
+        for (String code : List.of("${(`echo sentinel`)}", "$obj->{(`echo sentinel`)}", "$obj->{(`echo sentinel`)}()",
+                "Box::${(`echo sentinel`)}", "Box::{(`echo sentinel`)}()", "((`echo sentinel`))()", "((`echo sentinel`))::run()",
+                "((`echo sentinel`))::$p", "((`echo sentinel`))::VALUE", "((`echo sentinel`))::class", "new ${(`echo sentinel`)}",
+                "$value instanceof ${(`echo sentinel`)}", "$callback((`echo sentinel`))", "$callback(...(`echo sentinel`))",
+                "$obj->$method(...(`echo sentinel`))", "$type::$method(...(`echo sentinel`))", "new $type(...(`echo sentinel`))")) {
             assertRejected(code);
         }
     }

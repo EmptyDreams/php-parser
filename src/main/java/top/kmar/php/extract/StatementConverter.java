@@ -188,8 +188,8 @@ final class StatementConverter {
         };
     }
 
-    /** CUP 1.1.0 的 * 空产生式返回空列表；包装和 value 均不可缺失。 */
-    private IrBlock innerBlock(@Nullable NodeListNodeInnerStatement list, @Nullable AstNode origin, String path) {
+    /** CUP 1.1.0 的 * 空产生式返回空列表；包装和 value 均不可缺失，块来源取所属包装。 */
+    IrBlock innerBlock(@Nullable NodeListNodeInnerStatement list, @Nullable AstNode origin, String path) {
         context.required(list, origin, path);
         return new IrBlock(statements(context.required(list.getValue(), list, path), list, path),
                 context.source(origin));

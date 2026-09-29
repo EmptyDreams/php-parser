@@ -331,9 +331,9 @@ class BuiltinConversionTest {
     // 新的外壳不掩盖尚未支持的子树，isset/empty 等读取上下文也不允许空下标。
     @Test
     void rejectsUnsupportedOperandsInsideEveryBuiltinExpression() {
-        for (String code : List.of("isset((new class {}))", "empty((new class {}))", "(int) (new class {})",
-                "@(new class {})", "print (new class {})", "include (new class {})", "include_once (new class {})",
-                "require (new class {})", "require_once (new class {})", "eval((new class {}))", "exit((new class {}))",
+        for (String code : List.of("isset((`echo sentinel`))", "empty((`echo sentinel`))", "(int) (`echo sentinel`)",
+                "@(`echo sentinel`)", "print (`echo sentinel`)", "include (`echo sentinel`)", "include_once (`echo sentinel`)",
+                "require (`echo sentinel`)", "require_once (`echo sentinel`)", "eval((`echo sentinel`))", "exit((`echo sentinel`))",
                 "isset($a[])", "empty($a[])", "(int) $a[]", "@$a[]", "print $a[]",
                 "include $a[]", "eval($a[])", "die($a[])")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);

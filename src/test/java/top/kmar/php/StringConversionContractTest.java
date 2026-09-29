@@ -275,9 +275,9 @@ class StringConversionContractTest {
     // 不支持的插值子树必须沿完整字段路径失败，字符串外壳不能吞掉错误。
     @Test
     void propagatesUnsupportedNestedExpressionsThroughInterpolationPaths() {
-        NodeExpr unsupported = syntaxExpression("new class {}");
-        assertVariableFailure(new NodeEncapsVar.IndirectVar(unsupported, VARIABLE), ".newExpr");
-        assertVariableFailure(new NodeEncapsVar.NamedIndirectVarIndex(token("items"), unsupported, VARIABLE), ".newExpr");
+        NodeExpr unsupported = syntaxExpression("`echo sentinel`");
+        assertVariableFailure(new NodeEncapsVar.IndirectVar(unsupported, VARIABLE), ".e.ev");
+        assertVariableFailure(new NodeEncapsVar.NamedIndirectVarIndex(token("items"), unsupported, VARIABLE), ".index.ev");
         for (String php : List.of("\"{$items[]}\"", "\"${items[$items[]]}\"")) {
             NodeExpr parsed = syntaxExpression(php);
             var error = assertThrows(SyntaxConversionException.class, () -> convertExpression(parsed));

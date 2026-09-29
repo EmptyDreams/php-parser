@@ -392,7 +392,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { (new class {}); }
+                function unrelated() { `echo sentinel`; }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -416,12 +416,12 @@ class SyntaxConverterTest {
         assertEquals(3, declarations.size());
     }
 
-    // 当前子集外的表达式明确失败，不退回原始 AST 或部分转换结果。
+    // 临时对象写根和当前子集外的表达式明确失败，不退回原始 AST 或部分转换结果。
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
                 "$a =& (new class {})->field",
-                "function () { (new class {}); }", "(new class {})", "yield (new class {})")) {
+                "function () { (`echo sentinel`); }", "(`echo sentinel`)", "yield (`echo sentinel`)")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
             var error = assertThrows(SyntaxConversionException.class,
                     () -> SyntaxConverter.convertExpression(syntax), code);
@@ -456,8 +456,8 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "global ${(new class {})};", "(new class {});",
-                "function nested() {}", "class Nested {}", "goto end; end: (new class {});")) {
+                "global ${(`echo sentinel`)};", "(`echo sentinel`);",
+                "function nested() {}", "class Nested {}", "goto end; end: (`echo sentinel`);")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
         }

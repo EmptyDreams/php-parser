@@ -421,7 +421,7 @@ class SyntaxConverterContractTest {
     void keepsFailureStateLocalToEachConversion() {
         var file = DeclarationExtractor.extract(Main.parse("""
                 <?php
-                function bad() { echo 1; (new class {}); return 2; }
+                function bad() { echo 1; `echo sentinel`; return 2; }
                 function good() { return 3; }
                 """));
         var declarations = file.namespaceSections().getFirst().declarations();

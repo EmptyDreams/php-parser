@@ -358,8 +358,8 @@ class StringConversionTest {
     // 插值仍使用读取上下文，未知子树和 shell 命令不会因字符串支持而被执行或忽略。
     @Test
     void rejectsUnsupportedInterpolationContentsAndShellExecution() {
-        for (String code : List.of("\"{$items[]}\"", "\"${(new class {})}\"",
-                "\"{$items[(new class {})]}\"", Character.toString(96) + "echo hello" + Character.toString(96))) {
+        for (String code : List.of("\"{$items[]}\"", "\"${(`echo sentinel`)}\"",
+                "\"{$items[(`echo sentinel`)]}\"", Character.toString(96) + "echo hello" + Character.toString(96))) {
             assertRejected(code);
         }
     }

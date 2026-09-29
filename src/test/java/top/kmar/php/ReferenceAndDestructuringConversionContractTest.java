@@ -452,7 +452,7 @@ class ReferenceAndDestructuringConversionContractTest {
                     foreach ($items as &$item) { $item++; }
                     foreach ($values as [$value]) { echo $value; }
                 }
-                function unsupported() { list($value) = new class {}; }
+                function unsupported() { list($value) = `echo sentinel`; }
                 """), "references.php");
         var declarations = file.namespaceSections().getFirst().declarations();
         var function = (FunctionDefinition) declarations.getFirst();

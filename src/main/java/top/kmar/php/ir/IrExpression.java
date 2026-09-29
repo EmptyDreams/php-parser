@@ -9,7 +9,7 @@ public sealed interface IrExpression permits IrLiteral, IrIntegerLiteral, IrFloa
         IrAssignment, IrReferenceAssignment, IrDestructuringAssignment,
         IrCompoundAssignment, IrUpdate, IrArrayLiteral, IrIndex,
         IrUnary, IrBinary, IrLogical, IrCoalesce, IrConditional, IrCall,
-        IrNew, IrClone, IrInstanceOf, IrPropertyAccess, IrStaticPropertyAccess,
+        IrNew, IrNewAnonymous, IrClone, IrInstanceOf, IrPropertyAccess, IrStaticPropertyAccess,
         IrMethodCall, IrStaticCall, IrClassConstantReference, IrClassName,
         IrIsset, IrEmptyCheck, IrCast, IrErrorSuppress, IrPrint, IrInclude, IrEval, IrExit,
         IrClosure, IrYield, IrYieldFrom {

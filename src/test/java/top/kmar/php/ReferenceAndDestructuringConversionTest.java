@@ -496,19 +496,19 @@ class ReferenceAndDestructuringConversionTest {
         assertVariableTarget(global.variables().getFirst(), "other");
     }
 
-    // 新容器仍递归拒绝未支持的子树，不把匿名类或嵌套命名声明悄悄跳过。
+    // 新容器仍递归拒绝未支持的子树，不把反引号表达式或嵌套命名声明悄悄跳过。
     @Test
     void propagatesUnsupportedSubtreesThroughEveryNewContainer() {
-        for (String code : List.of("$left =& $right[(new class {})]", "$left[(new class {})] =& $right",
-                "[(new class {}) => &$value]", "[&$items[(new class {})]]",
-                "[(new class {}) => $value] = $source", "[$items[(new class {})]] = $source",
-                "[$value] = (new class {})")) {
+        for (String code : List.of("$left =& $right[(`echo sentinel`)]", "$left[(`echo sentinel`)] =& $right",
+                "[(`echo sentinel`) => &$value]", "[&$items[(`echo sentinel`)]]",
+                "[(`echo sentinel`) => $value] = $source", "[$items[(`echo sentinel`)]] = $source",
+                "[$value] = (`echo sentinel`)")) {
             assertRejectedExpression(code);
         }
-        for (String code : List.of("foreach ((new class {}) as &$value) {}",
-                "foreach ($items[(new class {})] as &$value) {}",
-                "foreach ($items as [$items[(new class {})]]) {}",
-                "foreach ($items as &$value) { global ${(new class {})}; }",
+        for (String code : List.of("foreach ((`echo sentinel`) as &$value) {}",
+                "foreach ($items[(`echo sentinel`)] as &$value) {}",
+                "foreach ($items as [$items[(`echo sentinel`)]]) {}",
+                "foreach ($items as &$value) { global ${(`echo sentinel`)}; }",
                 "foreach ($items as [$value]) { function nested() {} }")) {
             assertRejectedBody(code);
         }

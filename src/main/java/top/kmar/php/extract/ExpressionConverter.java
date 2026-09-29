@@ -711,9 +711,16 @@ final class ExpressionConverter {
         return new IrNamedClassReference(name, context.source(node));
     }
 
-    private IrNew newExpression(NodeNewExpr node, String path) {
+    private IrExpression newExpression(NodeNewExpr node, String path) {
+        if (node instanceof NodeNewExpr.NewAnonymous) {
+            var definition = context.required(node.getAnonClass(), node, path + ".anonClass");
+            var converted = new AnonymousClassConverter(context, this).convert(definition, path + ".anonClass");
+            return new IrNewAnonymous(converted,
+                    definition.getCtorArgs() == null ? List.of()
+                            : arguments(definition.getCtorArgs(), path + ".anonClass.ctorArgs"), context.source(node));
+        }
         if (!(node instanceof NodeNewExpr.New)) {
-            throw context.error(node, path, "暂不支持匿名类或无法识别的实例化结构");
+            throw context.error(node, path, "无法识别的实例化结构");
         }
         return new IrNew(
                 classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
