@@ -4,8 +4,8 @@ import top.kmar.php.model.SourceInfo;
 
 import java.util.Objects;
 
-/** 简单变量赋值目标，name 不包含开头的 $。 */
-public record IrVariableTarget(String name, SourceInfo source) implements IrAssignmentTarget {
+/** 变量写入目标，计算名称所需的表达式仍按读取处理。 */
+public record IrVariableTarget(IrAccessName name, SourceInfo source) implements IrAssignmentTarget {
     public IrVariableTarget {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(source, "source");

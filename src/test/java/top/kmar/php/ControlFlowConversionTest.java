@@ -90,21 +90,21 @@ class ControlFlowConversionTest {
                 }
                 """));
         IrCall selector = assertCall(statement.condition(), "selectValue", 1);
-        IrAssignment saved = assertInstanceOf(IrAssignment.class, selector.arguments().getFirst());
-        assertEquals("saved", assertInstanceOf(IrVariableTarget.class, saved.target()).name());
+        IrAssignment saved = assertInstanceOf(IrAssignment.class, selector.arguments().getFirst().expression());
+        assertEquals("saved", fixedName(assertInstanceOf(IrVariableTarget.class, saved.target()).name()));
         assertCall(saved.value(), "nextValue", 0);
         assertEquals(2, statement.cases().size());
         for (IrSwitchCase branch : statement.cases()) {
             IrCall condition = assertCall(branch.condition(), "nextCase", 1);
-            IrUpdate update = assertInstanceOf(IrUpdate.class, condition.arguments().getFirst());
+            IrUpdate update = assertInstanceOf(IrUpdate.class, condition.arguments().getFirst().expression());
             assertEquals(UpdateOperator.POST_INCREMENT, update.operator());
-            assertEquals("i", assertInstanceOf(IrVariableTarget.class, update.target()).name());
+            assertEquals("i", fixedName(assertInstanceOf(IrVariableTarget.class, update.target()).name()));
             assertEquals(1, branch.body().statements().size());
         }
         IrMethodCall action = assertInstanceOf(IrMethodCall.class, assertInstanceOf(IrExpressionStatement.class,
                 statement.cases().getFirst().body().statements().getFirst()).expression());
         assertVariable(action.receiver(), "object");
-        assertEquals("act", action.method());
+        assertEquals("act", fixedName(action.method()));
         assertTrue(action.arguments().isEmpty());
         assertInstanceOf(IrBreak.class, statement.cases().get(1).body().statements().getFirst());
     }
@@ -191,8 +191,8 @@ class ControlFlowConversionTest {
         assertEquals("\\RuntimeException", reference.name().spelling());
         assertEquals(NameForm.FULLY_QUALIFIED, reference.name().form());
         assertEquals(2, exception.arguments().size());
-        assertCall(exception.arguments().getFirst(), "message", 0);
-        assertInteger(exception.arguments().get(1), 3);
+        assertCall(exception.arguments().getFirst().expression(), "message", 0);
+        assertInteger(exception.arguments().get(1).expression(), 3);
     }
 
     // 循环、switch 与 try 可以嵌套；跳转、返回及 finally 中的副作用保持各自归属。
@@ -234,7 +234,7 @@ class ControlFlowConversionTest {
                 assertInstanceOf(IrThrow.class, attempt.body().statements().get(1)).expression());
         assertEquals("Problem", assertInstanceOf(IrNamedClassReference.class, failure.classReference()).name().spelling());
         assertEquals(1, failure.arguments().size());
-        assertVariable(failure.arguments().getFirst(), "state");
+        assertVariable(failure.arguments().getFirst().expression(), "state");
         assertEquals(1, attempt.catches().size());
         assertVariable(assertInstanceOf(IrReturn.class,
                 attempt.catches().getFirst().body().statements().getFirst()).value(), "error");
@@ -308,18 +308,18 @@ class ControlFlowConversionTest {
     @Test
     void rejectsUnsupportedContentsInEveryNewStatementPosition() {
         for (String code : List.of(
-                "switch ($callback()) {}",
-                "switch ($value) { case $callback(): ; }",
-                "switch ($value) { case 1: $callback(); }",
+                "switch (__LINE__) {}",
+                "switch ($value) { case __LINE__: ; }",
+                "switch ($value) { case 1: __LINE__; }",
                 "switch ($value) { default: global $value; }",
                 "switch ($value) { case 1: function nested() {} }",
-                "try { $callback(); } finally {}",
-                "try {} catch (Problem $error) { $callback(); }",
-                "try {} finally { $callback(); }",
+                "try { __LINE__; } finally {}",
+                "try {} catch (Problem $error) { __LINE__; }",
+                "try {} finally { __LINE__; }",
                 "try { class Nested {} } finally {}",
                 "try {} catch (Problem $error) { function nested() {} }",
                 "try {} finally { function nested() {} }",
-                "throw $callback();")) {
+                "throw __LINE__;")) {
             SyntaxBody syntax = assertDoesNotThrow(() -> syntaxBody(code), code);
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
             assertEquals("control-flow.php", error.source().sourceId());
@@ -349,13 +349,13 @@ class ControlFlowConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String expectedName, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(expectedName, call.name().spelling());
+        assertEquals(expectedName, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }
 
     private static void assertVariable(IrExpression expression, String expected) {
-        assertEquals(expected, assertInstanceOf(IrVariable.class, expression).name());
+        assertEquals(expected, fixedName(assertInstanceOf(IrVariable.class, expression).name()));
     }
 
     private static void assertInteger(IrExpression expression, long expected) {
@@ -376,5 +376,9 @@ class ControlFlowConversionTest {
         var program = (NodeProgram) Main.parse("<?php function f() { " + code + " }");
         var statements = program.getStmts().getValue().getFirst().getFunction().getStmts().getValue();
         return new SyntaxBody(List.copyOf(statements), new SourceInfo("control-flow.php", null));
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

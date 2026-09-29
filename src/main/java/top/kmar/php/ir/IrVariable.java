@@ -4,8 +4,8 @@ import top.kmar.php.model.SourceInfo;
 
 import java.util.Objects;
 
-/** 简单变量的读取表达式，name 不包含开头的 $。 */
-public record IrVariable(String name, SourceInfo source) implements IrExpression {
+/** 变量读取，名称可为固定名称或计算式名称，与可写目标分开表示。 */
+public record IrVariable(IrAccessName name, SourceInfo source) implements IrExpression {
     public IrVariable {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(source, "source");

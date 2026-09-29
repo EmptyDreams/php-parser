@@ -209,12 +209,16 @@ class ObjectConversionContractTest {
         assertEquals(sourceRange(index.getOffset()), indexTarget.index().source().range());
         assertEquals(sourceRange(call), callResult.source().range());
         assertEquals(callResult.source(), callBase.source());
-        assertEquals(sourceRange(call.getArgs().getArgs().getValue().getFirst().getArg()),
+        assertEquals(sourceRange(call.getArgs().getArgs().getValue().getFirst()),
                 callResult.arguments().getFirst().source().range());
+        assertEquals(sourceRange(call.getArgs().getArgs().getValue().getFirst().getArg()),
+                callResult.arguments().getFirst().expression().source().range());
         assertEquals(sourceRange(constructor), creation.source().range());
         assertEquals(sourceRange(constructor.getClazz()), creation.classReference().source().range());
-        assertEquals(sourceRange(constructor.getCtorArgs().getArgs().getValue().getFirst().getArg()),
+        assertEquals(sourceRange(constructor.getCtorArgs().getArgs().getValue().getFirst()),
                 creation.arguments().getFirst().source().range());
+        assertEquals(sourceRange(constructor.getCtorArgs().getArgs().getValue().getFirst().getArg()),
+                creation.arguments().getFirst().expression().source().range());
         assertAllSourceIds(result, "objects.php");
 
         NodeExpr originalMethod = expression("$box->run(4)");
@@ -253,18 +257,20 @@ class ObjectConversionContractTest {
     void snapshotsAndFreezesObjectArguments() {
         SourceInfo source = new SourceInfo(null, null);
         IrClassReference clazz = new IrNamedClassReference(new NameReference("C", NameForm.UNQUALIFIED, source), source);
-        var arguments = new ArrayList<IrExpression>(List.of(new IrIntegerLiteral(1, source)));
+        var arguments = new ArrayList<>(List.of(new IrArgument(new IrIntegerLiteral(1, source), false, source)));
         IrNew constructor = new IrNew(clazz, arguments, source);
-        IrMethodCall method = new IrMethodCall(new IrVariable("object", source), "run", arguments, source);
-        IrStaticCall staticCall = new IrStaticCall(clazz, "run", arguments, source);
+        IrMethodCall method = new IrMethodCall(new IrVariable(new IrFixedName("object", source), source),
+                new IrFixedName("run", source), arguments, source);
+        IrStaticCall staticCall = new IrStaticCall(clazz, new IrFixedName("run", source), arguments, source);
         arguments.clear();
-        for (List<IrExpression> snapshot : List.of(constructor.arguments(), method.arguments(), staticCall.arguments())) {
-            assertEquals(1, assertInstanceOf(IrIntegerLiteral.class, snapshot.getFirst()).value());
+        for (List<IrArgument> snapshot : List.of(constructor.arguments(), method.arguments(), staticCall.arguments())) {
+            assertEquals(1, assertInstanceOf(IrIntegerLiteral.class, snapshot.getFirst().expression()).value());
+            assertFalse(snapshot.getFirst().unpack());
             assertThrows(UnsupportedOperationException.class, snapshot::clear);
         }
         for (String code : List.of("new C(1)", "$object->run(1)", "C::run(1)")) {
             IrExpression result = convert(expression(code));
-            List<IrExpression> convertedArguments = switch (result) {
+            List<IrArgument> convertedArguments = switch (result) {
                 case IrNew call -> call.arguments();
                 case IrMethodCall call -> call.arguments();
                 case IrStaticCall call -> call.arguments();
@@ -322,36 +328,36 @@ class ObjectConversionContractTest {
         assertEquals(2, constructorBody.statements().size());
         IrAssignment initialize = assertInstanceOf(IrAssignment.class, statementExpression(constructorBody, 0));
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, initialize.target());
-        assertEquals("this", assertInstanceOf(IrVariableTarget.class, property.receiver()).name());
-        assertEquals("value", property.property());
+        assertEquals("this", fixedName(assertInstanceOf(IrVariableTarget.class, property.receiver()).name()));
+        assertEquals("value", fixedName(property.property()));
         IrUpdate increment = assertInstanceOf(IrUpdate.class, statementExpression(constructorBody, 1));
         assertEquals(UpdateOperator.POST_INCREMENT, increment.operator());
         IrStaticPropertyTarget staticProperty = assertInstanceOf(IrStaticPropertyTarget.class, increment.target());
-        assertEquals("created", staticProperty.property());
+        assertEquals("created", fixedName(staticProperty.property()));
         assertEquals(SpecialClassKind.SELF,
                 assertInstanceOf(IrSpecialClassReference.class, staticProperty.classReference()).kind());
         assertEquals(3, copyBody.statements().size());
         IrClone clone = assertInstanceOf(IrClone.class,
                 assertInstanceOf(IrAssignment.class, statementExpression(copyBody, 0)).value());
-        assertEquals("this", assertInstanceOf(IrVariable.class, clone.expression()).name());
+        assertEquals("this", fixedName(assertInstanceOf(IrVariable.class, clone.expression()).name()));
         assertEquals(CompoundAssignmentOperator.ADD,
                 assertInstanceOf(IrCompoundAssignment.class, statementExpression(copyBody, 1)).operator());
-        assertEquals("copy", assertInstanceOf(IrVariable.class,
-                assertInstanceOf(IrReturn.class, copyBody.statements().get(2)).value()).name());
+        assertEquals("copy", fixedName(assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrReturn.class, copyBody.statements().get(2)).value()).name()));
         IrNew newSelf = assertInstanceOf(IrNew.class,
                 assertInstanceOf(IrReturn.class, makeBody.statements().getFirst()).value());
         assertEquals(SpecialClassKind.SELF,
                 assertInstanceOf(IrSpecialClassReference.class, newSelf.classReference()).kind());
-        assertEquals("value", assertInstanceOf(IrVariable.class, newSelf.arguments().getFirst()).name());
+        assertEquals("value", fixedName(assertInstanceOf(IrVariable.class, newSelf.arguments().getFirst().expression()).name()));
 
         assertEquals(4, functionBody.statements().size());
         IrStaticCall call = assertInstanceOf(IrStaticCall.class,
                 assertInstanceOf(IrAssignment.class, statementExpression(functionBody, 0)).value());
         assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, call.classReference()).name().spelling());
-        assertEquals("make", call.method());
+        assertEquals("make", fixedName(call.method()));
         IrAssignment append = assertInstanceOf(IrAssignment.class, statementExpression(functionBody, 2));
         assertNull(assertInstanceOf(IrIndexTarget.class, append.target()).index());
-        assertEquals("copy", assertInstanceOf(IrMethodCall.class, append.value()).method());
+        assertEquals("copy", fixedName(assertInstanceOf(IrMethodCall.class, append.value()).method()));
         IrConditional conditional = assertInstanceOf(IrConditional.class,
                 assertInstanceOf(IrReturn.class, functionBody.statements().get(3)).value());
         assertInstanceOf(IrInstanceOf.class, conditional.condition());
@@ -520,5 +526,9 @@ class ObjectConversionContractTest {
             assertTrue(value instanceof String || value instanceof Enum<?> || value instanceof Number
                     || value instanceof Boolean, "未预期的结果字段类型：" + value.getClass());
         }
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

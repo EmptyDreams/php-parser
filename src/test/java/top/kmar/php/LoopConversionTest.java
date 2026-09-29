@@ -23,7 +23,7 @@ class LoopConversionTest {
         for (String code : List.of("while ($ready) { echo 1; return 2; }",
                 "while ($ready): echo 1; return 2; endwhile;")) {
             IrWhile loop = assertInstanceOf(IrWhile.class, only(code));
-            assertEquals("ready", assertInstanceOf(IrVariable.class, loop.condition()).name());
+            assertEquals("ready", fixedName(assertInstanceOf(IrVariable.class, loop.condition()).name()));
             assertEchoAndReturn(loop.body());
         }
         IrWhile single = assertInstanceOf(IrWhile.class, only("while ($ready) echo 1;"));
@@ -32,7 +32,7 @@ class LoopConversionTest {
 
         IrDoWhile loop = assertInstanceOf(IrDoWhile.class, only("do { echo 1; return 2; } while ($ready);"));
         assertEchoAndReturn(loop.body());
-        assertEquals("ready", assertInstanceOf(IrVariable.class, loop.condition()).name());
+        assertEquals("ready", fixedName(assertInstanceOf(IrVariable.class, loop.condition()).name()));
         IrDoWhile empty = assertInstanceOf(IrDoWhile.class, only("do ; while (1);"));
         assertInstanceOf(IrEmpty.class, empty.body().statements().getFirst());
         assertInteger(empty.condition(), 1);
@@ -51,10 +51,11 @@ class LoopConversionTest {
         IrFor loop = assertInstanceOf(IrFor.class,
                 only("for ($i = 0; check(), $i < 9; $i++, $i += 2) ;"));
         IrAssignment initializer = assertInstanceOf(IrAssignment.class, loop.initializers().getFirst());
-        assertEquals("i", assertInstanceOf(IrVariableTarget.class, initializer.target()).name());
+        assertEquals("i", fixedName(assertInstanceOf(IrVariableTarget.class, initializer.target()).name()));
         assertInteger(initializer.value(), 0);
         assertEquals(2, loop.conditions().size());
-        assertEquals("check", assertInstanceOf(IrCall.class, loop.conditions().getFirst()).name().spelling());
+        IrCall check = assertInstanceOf(IrCall.class, loop.conditions().getFirst());
+        assertEquals("check", assertInstanceOf(IrNamedCallTarget.class, check.target()).name().spelling());
         assertEquals(BinaryOperator.LESS, assertInstanceOf(IrBinary.class, loop.conditions().get(1)).operator());
         assertEquals(2, loop.updates().size());
         assertInstanceOf(IrUpdate.class, loop.updates().getFirst());
@@ -85,15 +86,16 @@ class LoopConversionTest {
     @Test
     void convertsForeachVariableTargetsAndBothBodyForms() {
         IrForeach valueOnly = assertInstanceOf(IrForeach.class, only("foreach (items() as $value) echo 1;"));
-        assertEquals("items", assertInstanceOf(IrCall.class, valueOnly.iterable()).name().spelling());
+        IrCall items = assertInstanceOf(IrCall.class, valueOnly.iterable());
+        assertEquals("items", assertInstanceOf(IrNamedCallTarget.class, items.target()).name().spelling());
         assertNull(valueOnly.keyTarget());
-        assertEquals("value", assertInstanceOf(IrVariableTarget.class, valueOnly.valueTarget()).name());
+        assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, valueOnly.valueTarget()).name()));
         assertEquals(1, valueOnly.body().statements().size());
         for (String suffix : List.of("{ echo 1; return 2; }", ": echo 1; return 2; endforeach;")) {
             IrForeach loop = assertInstanceOf(IrForeach.class, only("foreach ($items as $key => $value) " + suffix));
-            assertEquals("items", assertInstanceOf(IrVariable.class, loop.iterable()).name());
-            assertEquals("key", assertInstanceOf(IrVariableTarget.class, loop.keyTarget()).name());
-            assertEquals("value", assertInstanceOf(IrVariableTarget.class, loop.valueTarget()).name());
+            assertEquals("items", fixedName(assertInstanceOf(IrVariable.class, loop.iterable()).name()));
+            assertEquals("key", fixedName(assertInstanceOf(IrVariableTarget.class, loop.keyTarget()).name()));
+            assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, loop.valueTarget()).name()));
             assertEchoAndReturn(loop.body());
         }
     }
@@ -105,12 +107,12 @@ class LoopConversionTest {
                 only("foreach ($items as $keys[] => $values[][0]) ;"));
         IrIndexTarget key = assertInstanceOf(IrIndexTarget.class, loop.keyTarget());
         assertNull(key.index());
-        assertEquals("keys", assertInstanceOf(IrVariableTarget.class, key.base()).name());
+        assertEquals("keys", fixedName(assertInstanceOf(IrVariableTarget.class, key.base()).name()));
         IrIndexTarget value = assertInstanceOf(IrIndexTarget.class, loop.valueTarget());
         assertInteger(value.index(), 0);
         IrIndexTarget append = assertInstanceOf(IrIndexTarget.class, value.base());
         assertNull(append.index());
-        assertEquals("values", assertInstanceOf(IrVariableTarget.class, append.base()).name());
+        assertEquals("values", fixedName(assertInstanceOf(IrVariableTarget.class, append.base()).name()));
         assertInstanceOf(IrEmpty.class, loop.body().statements().getFirst());
     }
 
@@ -122,8 +124,8 @@ class LoopConversionTest {
         assertNull(assertInstanceOf(IrBreak.class, statements.get(0)).levels());
         assertNull(assertInstanceOf(IrContinue.class, statements.get(1)).levels());
         assertInteger(assertInstanceOf(IrBreak.class, statements.get(2)).levels(), 2);
-        assertEquals("depth", assertInstanceOf(IrVariable.class,
-                assertInstanceOf(IrContinue.class, statements.get(3)).levels()).name());
+        assertEquals("depth", fixedName(assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrContinue.class, statements.get(3)).levels()).name()));
         IrBinary levels = assertInstanceOf(IrBinary.class, assertInstanceOf(IrBreak.class, statements.get(4)).levels());
         assertEquals(BinaryOperator.ADD, levels.operator());
         assertInteger(levels.left(), 1);
@@ -138,7 +140,7 @@ class LoopConversionTest {
         IrForeach inner = assertInstanceOf(IrForeach.class, outer.body().statements().getFirst());
         assertEquals(2, inner.body().statements().size());
         IrIf branch = assertInstanceOf(IrIf.class, inner.body().statements().getFirst());
-        assertEquals("item", assertInstanceOf(IrVariable.class, branch.branches().getFirst().condition()).name());
+        assertEquals("item", fixedName(assertInstanceOf(IrVariable.class, branch.branches().getFirst().condition()).name()));
         IrContinue jump = assertInstanceOf(IrContinue.class, branch.branches().getFirst().body().statements().getFirst());
         assertInteger(jump.levels(), 2);
         assertNull(assertInstanceOf(IrBreak.class, inner.body().statements().get(1)).levels());
@@ -255,5 +257,9 @@ class LoopConversionTest {
 
     private static NodeStatement rawStatement(String code) {
         return assertInstanceOf(NodeInnerStatement.Statement.class, syntaxBody(code).statements().getFirst()).getStmt();
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

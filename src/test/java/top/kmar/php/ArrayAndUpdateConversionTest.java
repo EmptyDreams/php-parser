@@ -210,10 +210,10 @@ class ArrayAndUpdateConversionTest {
         }
     }
 
-    // 扩展可写访问链后，常量、字面量、运算结果与动态变量仍不能成为目标根。
+    // 扩展可写访问链后，常量、字面量与运算结果仍不能成为目标根。
     @Test
     void rejectsUnsupportedRootsForEveryWriteOperation() {
-        for (String target : List.of("[1][0]", "ITEMS[0]", "'text'[0]", "($a + $b)[0]", "$$items[0]")) {
+        for (String target : List.of("[1][0]", "ITEMS[0]", "'text'[0]", "($a + $b)[0]")) {
             assertRejected(target + " = 1");
             assertRejected(target + " += 1");
             assertRejected(target + "++");
@@ -335,16 +335,20 @@ class ArrayAndUpdateConversionTest {
     }
 
     private static void assertVariable(String expected, IrExpression expression) {
-        assertEquals(expected, assertInstanceOf(IrVariable.class, expression).name());
+        assertEquals(expected, fixedName(assertInstanceOf(IrVariable.class, expression).name()));
     }
 
     private static void assertVariableTarget(String expected, IrWriteBase target) {
-        assertEquals(expected, assertInstanceOf(IrVariableTarget.class, target).name());
+        assertEquals(expected, fixedName(assertInstanceOf(IrVariableTarget.class, target).name()));
     }
 
     private static void assertCall(String expected, IrExpression expression) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(expected, call.name().spelling());
+        assertEquals(expected, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
         assertTrue(call.arguments().isEmpty());
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

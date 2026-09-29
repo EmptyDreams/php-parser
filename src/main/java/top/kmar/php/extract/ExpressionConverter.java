@@ -321,16 +321,17 @@ final class ExpressionConverter {
     }
 
     private IrExpression constant(NodeConstant node, String path) {
-        if (node instanceof NodeConstant.ClassConstant) {
-            IrClassReference clazz = classReference(
-                    context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+        if (node instanceof NodeConstant.ClassConstant || node instanceof NodeConstant.DynamicClassConstant) {
+            IrClassReference clazz = node instanceof NodeConstant.ClassConstant
+                    ? classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz")
+                    : dynamicClassReference(context.required(node.getD(), node, path + ".d"), path + ".d");
             String member = context.identifier(context.required(node.getMember(), node, path + ".member"),
                     path + ".member");
             return member.equalsIgnoreCase("class") ? new IrClassName(clazz, context.source(node))
                     : new IrClassConstantReference(clazz, member, context.source(node));
         }
         if (!(node instanceof NodeConstant.NamedConstant)) {
-            throw context.error(node, path, "暂不支持动态类常量引用或无法识别的常量结构");
+            throw context.error(node, path, "无法识别的常量结构");
         }
         NameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
         String spelling = name.spelling();
@@ -366,10 +367,8 @@ final class ExpressionConverter {
 
     private IrExpression callableVariable(NodeCallableVariable node, String path) {
         return switch (node) {
-            case NodeCallableVariable.SimpleVar ignored -> {
-                NodeSimpleVariable simple = context.required(node.getSv(), node, path + ".sv");
-                yield new IrVariable(variableName(simple, path + ".sv"), context.source(simple));
-            }
+            case NodeCallableVariable.SimpleVar ignored -> simpleVariable(
+                    context.required(node.getSv(), node, path + ".sv"), path + ".sv");
             case NodeCallableVariable.FunctionCall ignored -> call(
                     context.required(node.getCall(), node, path + ".call"), path + ".call");
             case NodeCallableVariable.MethodCall ignored -> new IrMethodCall(
@@ -498,53 +497,119 @@ final class ExpressionConverter {
     }
 
     private IrStaticPropertyAccess staticProperty(NodeStaticMember node, String path) {
-        requireStaticProperty(node, path);
         return new IrStaticPropertyAccess(
-                classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                staticPropertyClass(node, path),
                 variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
                 context.source(node));
     }
 
     private IrStaticPropertyTarget staticPropertyTarget(NodeStaticMember node, String path) {
-        requireStaticProperty(node, path);
         return new IrStaticPropertyTarget(
-                classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                staticPropertyClass(node, path),
                 variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
                 context.source(node));
     }
 
-    private void requireStaticProperty(NodeStaticMember node, String path) {
-        if (!(node instanceof NodeStaticMember.StaticProperty)) {
-            throw context.error(node, path, "暂不支持动态类名或无法识别的静态属性结构");
-        }
+    private IrClassReference staticPropertyClass(NodeStaticMember node, String path) {
+        return switch (node) {
+            case NodeStaticMember.StaticProperty ignored -> classReference(
+                    context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+            case NodeStaticMember.DynamicStaticProperty ignored -> dynamicClassReference(
+                    context.required(node.getD(), node, path + ".d"), path + ".d");
+            default -> throw context.error(node, path, "无法识别的静态属性结构");
+        };
     }
 
-    private String variableName(NodeSimpleVariable node, String path) {
-        if (!(node instanceof NodeSimpleVariable.NamedVar)) {
-            throw context.error(node, path, "暂不支持变量变量或间接变量");
-        }
-        return context.text(node.getVar(), node, path + ".var");
+    private IrVariable simpleVariable(NodeSimpleVariable node, String path) {
+        return new IrVariable(variableName(node, path), context.source(node));
     }
 
-    private String propertyName(NodePropertyName node, String path) {
-        if (!(node instanceof NodePropertyName.Name)) {
-            throw context.error(node, path, "暂不支持动态属性／方法名或无法识别的成员名称");
-        }
-        return context.text(node.getName(), node, path + ".name");
+    /** 变量自身及静态属性共享名称规则：C::$p 是固定名称，C::$$p 才读取 $p 计算名称。 */
+    private IrAccessName variableName(NodeSimpleVariable node, String path) {
+        return switch (node) {
+            case NodeSimpleVariable.NamedVar ignored -> new IrFixedName(
+                    context.text(node.getVar(), node, path + ".var"), context.source(node));
+            case NodeSimpleVariable.NestedVar ignored -> new IrComputedName(
+                    simpleVariable(context.required(node.getNested(), node, path + ".nested"), path + ".nested"),
+                    context.source(node));
+            case NodeSimpleVariable.IndirectVar ignored -> new IrComputedName(
+                    convert(context.required(node.getE(), node, path + ".e"), path + ".e"), context.source(node));
+            default -> throw context.error(node, path, "无法识别的变量名称结构");
+        };
     }
 
-    private String memberName(NodeMemberName node, String path) {
-        if (!(node instanceof NodeMemberName.IdentifierName)) {
-            throw context.error(node, path, "暂不支持动态静态方法名或无法识别的成员名称");
-        }
-        return context.identifier(context.required(node.getIdent(), node, path + ".ident"), path + ".ident");
+    private IrAccessName propertyName(NodePropertyName node, String path) {
+        return switch (node) {
+            case NodePropertyName.Name ignored -> new IrFixedName(
+                    context.text(node.getName(), node, path + ".name"), context.source(node));
+            case NodePropertyName.Expression ignored -> new IrComputedName(
+                    convert(context.required(node.getE(), node, path + ".e"), path + ".e"), context.source(node));
+            // ->$p 读取整个变量，而不是取其固定名称 p。
+            case NodePropertyName.Variable ignored -> new IrComputedName(
+                    simpleVariable(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                    context.source(node));
+            default -> throw context.error(node, path, "无法识别的属性／方法名称结构");
+        };
+    }
+
+    private IrAccessName memberName(NodeMemberName node, String path) {
+        return switch (node) {
+            case NodeMemberName.IdentifierName ignored -> new IrFixedName(
+                    context.identifier(context.required(node.getIdent(), node, path + ".ident"), path + ".ident"),
+                    context.source(node));
+            case NodeMemberName.ExpressionName ignored -> new IrComputedName(
+                    convert(context.required(node.getE(), node, path + ".e"), path + ".e"), context.source(node));
+            // C::$p() 与 C::$p 不同：前者需要读取 $p 作为方法名称。
+            case NodeMemberName.VariableName ignored -> new IrComputedName(
+                    simpleVariable(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                    context.source(node));
+            default -> throw context.error(node, path, "无法识别的静态方法名称结构");
+        };
     }
 
     private IrClassReference classReference(NodeClassNameReference node, String path) {
-        if (!(node instanceof NodeClassNameReference.ClassName)) {
-            throw context.error(node, path, "暂不支持动态类名或无法识别的类引用");
-        }
-        return classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+        return switch (node) {
+            case NodeClassNameReference.ClassName ignored -> classReference(
+                    context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+            case NodeClassNameReference.NewVariable ignored -> new IrDynamicClassReference(
+                    newVariable(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                    context.source(node));
+            default -> throw context.error(node, path, "无法识别的类引用");
+        };
+    }
+
+    private IrDynamicClassReference dynamicClassReference(NodeDereferencable node, String path) {
+        return new IrDynamicClassReference(dereferencable(node, path), context.source(node));
+    }
+
+    /** new 和 instanceof 的类名访问链始终读取，不能继承外层写入模式。 */
+    private IrExpression newVariable(NodeNewVariable node, String path) {
+        return switch (node) {
+            case NodeNewVariable.SimpleVar ignored -> simpleVariable(
+                    context.required(node.getSv(), node, path + ".sv"), path + ".sv");
+            case NodeNewVariable.Index ignored -> new IrIndex(
+                    newVariable(context.required(node.getNested(), node, path + ".nested"), path + ".nested"),
+                    readIndex(node.getOffset(), node, path + ".offset"), context.source(node));
+            case NodeNewVariable.CurlyIndex ignored -> new IrIndex(
+                    newVariable(context.required(node.getNested(), node, path + ".nested"), path + ".nested"),
+                    readIndex(node.getE(), node, path + ".e"), context.source(node));
+            case NodeNewVariable.PropertyAccess ignored -> new IrPropertyAccess(
+                    newVariable(context.required(node.getNested(), node, path + ".nested"), path + ".nested"),
+                    propertyName(context.required(node.getProp(), node, path + ".prop"), path + ".prop"),
+                    context.source(node));
+            case NodeNewVariable.StaticProperty ignored -> new IrStaticPropertyAccess(
+                    classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                    variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                    context.source(node));
+            case NodeNewVariable.DynamicStaticProperty ignored -> {
+                NodeNewVariable base = context.required(node.getNested(), node, path + ".nested");
+                yield new IrStaticPropertyAccess(
+                        new IrDynamicClassReference(newVariable(base, path + ".nested"), context.source(base)),
+                        variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                        context.source(node));
+            }
+            default -> throw context.error(node, path, "无法识别的类名读取链");
+        };
     }
 
     private IrClassReference classReference(NodeClassName node, String path) {
@@ -593,7 +658,11 @@ final class ExpressionConverter {
     private IrExpression call(NodeFunctionCall node, String path) {
         return switch (node) {
             case NodeFunctionCall.Call ignored -> new IrCall(
-                    context.name(context.required(node.getN(), node, path + ".n"), path + ".n"),
+                    namedCallTarget(context.required(node.getN(), node, path + ".n"), path + ".n"),
+                    arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
+                    context.source(node));
+            case NodeFunctionCall.CallDynamic ignored -> new IrCall(
+                    expressionCallTarget(context.required(node.getCallee(), node, path + ".callee"), path + ".callee"),
                     arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
                     context.source(node));
             case NodeFunctionCall.StaticCall ignored -> new IrStaticCall(
@@ -601,25 +670,55 @@ final class ExpressionConverter {
                     memberName(context.required(node.getMember(), node, path + ".member"), path + ".member"),
                     arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
                     context.source(node));
-            default -> throw context.error(node, path, "暂不支持动态调用或无法识别的调用结构");
+            case NodeFunctionCall.StaticCallDynamic ignored -> new IrStaticCall(
+                    dynamicClassReference(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    memberName(context.required(node.getMember(), node, path + ".member"), path + ".member"),
+                    arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
+                    context.source(node));
+            default -> throw context.error(node, path, "无法识别的调用结构");
         };
     }
 
-    private List<IrExpression> arguments(NodeArgumentList argumentList, String path) {
+    private IrNamedCallTarget namedCallTarget(NodeName node, String path) {
+        return new IrNamedCallTarget(context.name(node, path), context.source(node));
+    }
+
+    private IrExpressionCallTarget expressionCallTarget(NodeCallableExpr node, String path) {
+        IrExpression expression = switch (node) {
+            case NodeCallableExpr.CallableVariable ignored -> callableVariable(
+                    context.required(node.getCv(), node, path + ".cv"), path + ".cv");
+            case NodeCallableExpr.Paren ignored -> convert(
+                    context.required(node.getE(), node, path + ".e"), path + ".e");
+            case NodeCallableExpr.Scalar ignored -> dereferencableScalar(
+                    context.required(node.getDs(), node, path + ".ds"), path + ".ds");
+            default -> throw context.error(node, path, "无法识别的动态调用目标");
+        };
+        return new IrExpressionCallTarget(expression, context.source(node));
+    }
+
+    private List<IrArgument> arguments(NodeArgumentList argumentList, String path) {
         if (!(argumentList instanceof NodeArgumentList.Args)) {
             throw context.error(argumentList, path, "无法识别的调用参数列表");
         }
         var list = context.required(argumentList.getArgs(), argumentList, path + ".args");
-        var arguments = new ArrayList<IrExpression>();
+        var arguments = new ArrayList<IrArgument>();
         var values = context.elements(list.getValue(), argumentList, path + ".args");
         for (int i = 0; i < values.size(); i++) {
             NodeArgument argument = values.get(i);
             String argumentPath = path + ".args[" + i + "]";
-            if (!(argument instanceof NodeArgument.Arg)) {
-                throw context.error(argument, argumentPath, "暂不支持参数解包或无法识别的实参");
-            }
-            arguments.add(convert(context.required(argument.getArg(), argument, argumentPath + ".arg"),
-                    argumentPath + ".arg"));
+            boolean unpack = switch (argument) {
+                case NodeArgument.Arg ignored -> false;
+                case NodeArgument.UnpackArg ignored -> {
+                    if (!context.text(argument.getOp(), argument, argumentPath + ".op").equals("...")) {
+                        throw context.error(argument, argumentPath + ".op", "实参解包标记与结构不一致");
+                    }
+                    yield true;
+                }
+                default -> throw context.error(argument, argumentPath, "无法识别的实参");
+            };
+            arguments.add(new IrArgument(
+                    convert(context.required(argument.getArg(), argument, argumentPath + ".arg"), argumentPath + ".arg"),
+                    unpack, context.source(argument)));
         }
         return arguments;
     }

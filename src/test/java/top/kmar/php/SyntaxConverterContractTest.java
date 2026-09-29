@@ -202,15 +202,18 @@ class SyntaxConverterContractTest {
         var expressions = new ArrayList<IrExpression>();
         expressions.add(new IrIntegerLiteral(1, source));
         var echo = new IrEcho(expressions, source);
-        var call = new IrCall(new NameReference("f", NameForm.UNQUALIFIED, source), expressions, source);
+        var arguments = new ArrayList<>(List.of(new IrArgument(expressions.getFirst(), false, source)));
+        var call = new IrCall(new IrNamedCallTarget(new NameReference("f", NameForm.UNQUALIFIED, source), source),
+                arguments, source);
         expressions.clear();
+        arguments.clear();
         assertEquals(1, echo.expressions().size());
         assertEquals(1, call.arguments().size());
         assertThrows(UnsupportedOperationException.class, echo.expressions()::clear);
         assertThrows(UnsupportedOperationException.class, call.arguments()::clear);
 
         var branches = new ArrayList<IrIfBranch>();
-        branches.add(new IrIfBranch(new IrVariable("a", source), block, source));
+        branches.add(new IrIfBranch(new IrVariable(new IrFixedName("a", source), source), block, source));
         var conditional = new IrIf(branches, null, source);
         branches.clear();
         assertEquals(1, conditional.branches().size());
@@ -270,7 +273,7 @@ class SyntaxConverterContractTest {
         assertEquals(6, body.statements().size());
         IrAssignment initialization = assertInstanceOf(IrAssignment.class,
                 assertInstanceOf(IrExpressionStatement.class, body.statements().getFirst()).expression());
-        assertEquals("result", assertInstanceOf(IrVariableTarget.class, initialization.target()).name());
+        assertEquals("result", fixedName(assertInstanceOf(IrVariableTarget.class, initialization.target()).name()));
         assertTrue(assertInstanceOf(IrArrayLiteral.class, initialization.value()).entries().isEmpty());
         IrFor loop = assertInstanceOf(IrFor.class, body.statements().get(1));
         assertEquals(UpdateOperator.POST_INCREMENT, assertInstanceOf(IrUpdate.class, loop.updates().getFirst()).operator());
@@ -280,24 +283,24 @@ class SyntaxConverterContractTest {
         IrAssignment append = assertInstanceOf(IrAssignment.class,
                 assertInstanceOf(IrExpressionStatement.class, loop.body().statements().get(1)).expression());
         assertNull(assertInstanceOf(IrIndexTarget.class, append.target()).index());
-        assertEquals("i", assertInstanceOf(IrVariable.class,
-                assertInstanceOf(IrIndex.class, append.value()).index()).name());
+        assertEquals("i", fixedName(assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrIndex.class, append.value()).index()).name()));
         IrForeach foreach = assertInstanceOf(IrForeach.class, body.statements().get(2));
-        assertEquals("key", assertInstanceOf(IrVariableTarget.class, foreach.keyTarget()).name());
-        assertEquals("value", assertInstanceOf(IrVariableTarget.class, foreach.valueTarget()).name());
+        assertEquals("key", fixedName(assertInstanceOf(IrVariableTarget.class, foreach.keyTarget()).name()));
+        assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, foreach.valueTarget()).name()));
         IrCompoundAssignment compound = assertInstanceOf(IrCompoundAssignment.class,
                 assertInstanceOf(IrExpressionStatement.class, foreach.body().statements().getFirst()).expression());
         assertEquals(CompoundAssignmentOperator.ADD, compound.operator());
-        assertEquals("key", assertInstanceOf(IrVariable.class,
-                assertInstanceOf(IrIndexTarget.class, compound.target()).index()).name());
+        assertEquals("key", fixedName(assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrIndexTarget.class, compound.target()).index()).name()));
         IrWhile whileLoop = assertInstanceOf(IrWhile.class, body.statements().get(3));
         assertEquals(UpdateOperator.PRE_DECREMENT, assertInstanceOf(IrUpdate.class,
                 assertInstanceOf(IrExpressionStatement.class, whileLoop.body().statements().getFirst()).expression()).operator());
         IrDoWhile doLoop = assertInstanceOf(IrDoWhile.class, body.statements().get(4));
         assertEquals(UpdateOperator.POST_DECREMENT, assertInstanceOf(IrUpdate.class,
                 assertInstanceOf(IrExpressionStatement.class, doLoop.body().statements().getFirst()).expression()).operator());
-        assertEquals("result", assertInstanceOf(IrVariable.class,
-                assertInstanceOf(IrReturn.class, body.statements().get(5)).value()).name());
+        assertEquals("result", fixedName(assertInstanceOf(IrVariable.class,
+                assertInstanceOf(IrReturn.class, body.statements().get(5)).value()).name()));
 
         assertEquals(function.body().source(), body.source());
         assertAllSourceIds(body, "procedural.php");
@@ -417,7 +420,7 @@ class SyntaxConverterContractTest {
     void keepsFailureStateLocalToEachConversion() {
         var file = DeclarationExtractor.extract(Main.parse("""
                 <?php
-                function bad() { echo 1; $callback(); return 2; }
+                function bad() { echo 1; __LINE__; return 2; }
                 function good() { return 3; }
                 """));
         var declarations = file.namespaceSections().getFirst().declarations();
@@ -486,5 +489,9 @@ class SyntaxConverterContractTest {
             assertTrue(value instanceof String || value instanceof Enum<?> || value instanceof Number
                     || value instanceof Boolean, "未预期的结果字段类型：" + value.getClass());
         }
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

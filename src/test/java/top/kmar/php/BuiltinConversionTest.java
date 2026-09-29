@@ -34,8 +34,8 @@ class BuiltinConversionTest {
         assertVariable(multiple.expressions().get(2), "missing");
         IrPropertyAccess property = assertInstanceOf(IrPropertyAccess.class, multiple.expressions().get(3));
         assertVariable(property.receiver(), "object");
-        assertEquals("value", property.property());
-        assertEquals("value", assertInstanceOf(IrStaticPropertyAccess.class, multiple.expressions().get(4)).property());
+        assertEquals("value", fixedName(property.property()));
+        assertEquals("value", fixedName(assertInstanceOf(IrStaticPropertyAccess.class, multiple.expressions().get(4)).property()));
     }
 
     // 文法接受的 isset 表达式直接保留，不在结构转换层补上 PHP 的上下文合法性检查。
@@ -58,7 +58,7 @@ class BuiltinConversionTest {
     void keepsEmptyChecksAroundTheirOriginalOperands() {
         IrEmptyCheck check = assertInstanceOf(IrEmptyCheck.class, expression("EmPtY($missing['key']->value)"));
         IrPropertyAccess property = assertInstanceOf(IrPropertyAccess.class, check.expression());
-        assertEquals("value", property.property());
+        assertEquals("value", fixedName(property.property()));
         IrIndex index = assertInstanceOf(IrIndex.class, property.receiver());
         assertVariable(index.base(), "missing");
         assertLiteral(index.index(), LiteralKind.STRING, "'key'");
@@ -175,7 +175,7 @@ class BuiltinConversionTest {
                 IrAssignment saved = assertInstanceOf(IrAssignment.class, include.expression());
                 assertVariableTarget(saved.target(), "path");
                 IrCall locate = assertCall(saved.value(), "locate", 1);
-                assertCall(locate.arguments().getFirst(), "first", 0);
+                assertCall(locate.arguments().getFirst().expression(), "first", 0);
             }
             IrInclude missing = assertInstanceOf(IrInclude.class,
                     expression(keyword + " '/file-that-does-not-exist.php'"));
@@ -197,7 +197,7 @@ class BuiltinConversionTest {
         IrErrorSuppress suppressed = assertInstanceOf(IrErrorSuppress.class, expression("@eval(makeCode($saved = next()))"));
         IrEval eval = assertInstanceOf(IrEval.class, suppressed.expression());
         IrCall call = assertCall(eval.expression(), "makeCode", 1);
-        IrAssignment saved = assertInstanceOf(IrAssignment.class, call.arguments().getFirst());
+        IrAssignment saved = assertInstanceOf(IrAssignment.class, call.arguments().getFirst().expression());
         assertVariableTarget(saved.target(), "saved");
         assertCall(saved.value(), "next", 0);
     }
@@ -225,7 +225,7 @@ class BuiltinConversionTest {
                 assertInstanceOf(IrExpressionStatement.class, block.statements().getFirst()).expression());
         IrAssignment saved = assertInstanceOf(IrAssignment.class, exit.expression());
         assertVariableTarget(saved.target(), "code");
-        assertCall(assertCall(saved.value(), "status", 1).arguments().getFirst(), "next", 0);
+        assertCall(assertCall(saved.value(), "status", 1).arguments().getFirst().expression(), "next", 0);
         assertInteger(assertInstanceOf(IrEcho.class, block.statements().get(1)).expressions().getFirst(), 2);
         IrExit printed = assertInstanceOf(IrExit.class, expression("die(print next())"));
         assertCall(assertInstanceOf(IrPrint.class, printed.expression()).expression(), "next", 0);
@@ -242,10 +242,10 @@ class BuiltinConversionTest {
         assertVariableTarget(index.base(), "items");
         assertCall(index.index(), "next", 0);
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, unset.targets().get(2));
-        assertEquals("Value", property.property());
+        assertEquals("Value", fixedName(property.property()));
         assertVariableTarget(property.receiver(), "object");
         IrStaticPropertyTarget staticProperty = assertInstanceOf(IrStaticPropertyTarget.class, unset.targets().get(3));
-        assertEquals("Items", staticProperty.property());
+        assertEquals("Items", fixedName(staticProperty.property()));
         assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, staticProperty.classReference()).name().spelling());
         assertVariableTarget(unset.targets().get(4), "a");
     }
@@ -261,7 +261,7 @@ class BuiltinConversionTest {
         IrIndexTarget curly = assertInstanceOf(IrIndexTarget.class, unset.targets().getFirst());
         assertCall(curly.index(), "next", 0);
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, curly.base());
-        assertEquals("Value", property.property());
+        assertEquals("Value", fixedName(property.property()));
         IrIndexTarget inner = assertInstanceOf(IrIndexTarget.class, property.receiver());
         assertInteger(inner.index(), 0);
         assertVariableTarget(inner.base(), "items");
@@ -269,29 +269,29 @@ class BuiltinConversionTest {
         IrIndexTarget called = assertInstanceOf(IrIndexTarget.class, unset.targets().get(1));
         assertCall(called.index(), "next", 0);
         IrPropertyTarget items = assertInstanceOf(IrPropertyTarget.class, called.base());
-        assertEquals("items", items.property());
+        assertEquals("items", fixedName(items.property()));
         IrCall factory = assertCall(assertInstanceOf(IrExpressionWriteBase.class, items.receiver()).expression(), "factory", 1);
-        assertCall(factory.arguments().getFirst(), "first", 0);
+        assertCall(factory.arguments().getFirst().expression(), "first", 0);
 
         IrIndexTarget method = assertInstanceOf(IrIndexTarget.class, unset.targets().get(2));
         assertInteger(method.index(), 0);
         IrMethodCall make = assertInstanceOf(IrMethodCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, method.base()).expression());
-        assertEquals("make", make.method());
+        assertEquals("make", fixedName(make.method()));
         assertVariable(make.receiver(), "object");
         assertTrue(make.arguments().isEmpty());
 
         IrPropertyTarget staticCall = assertInstanceOf(IrPropertyTarget.class, unset.targets().get(3));
-        assertEquals("Value", staticCall.property());
+        assertEquals("Value", fixedName(staticCall.property()));
         IrStaticCall staticMake = assertInstanceOf(IrStaticCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, staticCall.receiver()).expression());
-        assertEquals("make", staticMake.method());
+        assertEquals("make", fixedName(staticMake.method()));
         assertTrue(staticMake.arguments().isEmpty());
         IrPropertyTarget staticPath = assertInstanceOf(IrPropertyTarget.class, unset.targets().get(4));
-        assertEquals("value", staticPath.property());
+        assertEquals("value", fixedName(staticPath.property()));
         IrIndexTarget staticIndex = assertInstanceOf(IrIndexTarget.class, staticPath.receiver());
         assertInteger(staticIndex.index(), 1);
-        assertEquals("items", assertInstanceOf(IrStaticPropertyTarget.class, staticIndex.base()).property());
+        assertEquals("items", fixedName(assertInstanceOf(IrStaticPropertyTarget.class, staticIndex.base()).property()));
     }
 
     // 禁止追加的删除模式只沿目标基底传递，索引与实参中的独立赋值仍可使用追加目标。
@@ -306,23 +306,23 @@ class BuiltinConversionTest {
         IrIndexTarget called = assertInstanceOf(IrIndexTarget.class, unset.targets().get(1));
         assertInteger(called.index(), 0);
         IrCall factory = assertCall(assertInstanceOf(IrExpressionWriteBase.class, called.base()).expression(), "factory", 1);
-        assertAppendAssignment(factory.arguments().getFirst(), "items", 2);
+        assertAppendAssignment(factory.arguments().getFirst().expression(), "items", 2);
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, unset.targets().get(2));
         IrMethodCall method = assertInstanceOf(IrMethodCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, property.receiver()).expression());
-        assertEquals("make", method.method());
+        assertEquals("make", fixedName(method.method()));
         assertEquals(1, method.arguments().size());
-        assertAppendAssignment(method.arguments().getFirst(), "more", 3);
+        assertAppendAssignment(method.arguments().getFirst().expression(), "more", 3);
         assertAppendAssignment(expression("$after[] = 4"), "after", 4);
     }
 
-    // 追加在删除链任意层均失败；独立调用、动态名称及读取边界中的追加也不能成为删除目标。
+    // 追加在删除链任意层均失败；独立调用及读取边界中的追加也不能成为删除目标。
     @Test
     void rejectsAppendAndUnsupportedUnsetTargets() {
         for (String target : List.of("$a[]", "$a[]->p", "($a[])[0]", "$a[][0]->p",
                 "$a->items[]", "Box::$items[]->p", "factory()[]", "factory()[]->p",
                 "$a[]->make()->p", "factory($a[])[0]", "$a[$b[]]", "$a->make($b[])->p",
-                "factory()", "$a->make()", "Box::make()", "$$a", "$a->$property", "$class::$value")) {
+                "factory()", "$a->make()", "Box::make()")) {
             assertRejectedBody("unset(" + target + ");");
         }
     }
@@ -330,9 +330,9 @@ class BuiltinConversionTest {
     // 新的外壳不掩盖尚未支持的子树，isset/empty 等读取上下文也不允许空下标。
     @Test
     void rejectsUnsupportedOperandsInsideEveryBuiltinExpression() {
-        for (String code : List.of("isset($callback())", "empty($callback())", "(int) $callback()",
-                "@$callback()", "print $callback()", "include $callback()", "include_once $callback()",
-                "require $callback()", "require_once $callback()", "eval($callback())", "exit($callback())",
+        for (String code : List.of("isset(__LINE__)", "empty(__LINE__)", "(int) __LINE__",
+                "@__LINE__", "print __LINE__", "include __LINE__", "include_once __LINE__",
+                "require __LINE__", "require_once __LINE__", "eval(__LINE__)", "exit(__LINE__)",
                 "isset($a[])", "empty($a[])", "(int) $a[]", "@$a[]", "print $a[]",
                 "include $a[]", "eval($a[])", "die($a[])")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
@@ -363,17 +363,17 @@ class BuiltinConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, call.name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }
 
     private static void assertVariable(IrExpression expression, String name) {
-        assertEquals(name, assertInstanceOf(IrVariable.class, expression).name());
+        assertEquals(name, fixedName(assertInstanceOf(IrVariable.class, expression).name()));
     }
 
     private static void assertVariableTarget(IrWriteBase base, String name) {
-        assertEquals(name, assertInstanceOf(IrVariableTarget.class, base).name());
+        assertEquals(name, fixedName(assertInstanceOf(IrVariableTarget.class, base).name()));
     }
 
     private static void assertInteger(IrExpression expression, long value) {
@@ -410,5 +410,9 @@ class BuiltinConversionTest {
         NodeProgram parsed = (NodeProgram) Main.parse("<?php " + code + ";");
         NodeExpr syntax = parsed.getStmts().getValue().getFirst().getStmt().getExpression();
         return new SyntaxExpression(syntax, new SourceInfo("builtins.php", null));
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

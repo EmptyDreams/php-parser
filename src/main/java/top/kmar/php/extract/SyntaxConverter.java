@@ -9,7 +9,8 @@ import java.util.Objects;
 
 /**
  * 将选定的语法体或表达式转换为独立 IR，不修改原 AST 或声明模型。
- * <p>支持基础运算、条件、循环、switch、异常处理结构、普通数组、具名对象操作、属性／下标读写，
+ * <p>支持基础运算、条件、循环、switch、异常处理结构、普通数组、具名及动态对象操作、属性／下标读写，
+ * 动态变量与调用、实参解包，
  * 以及 isset/empty/unset、强转、错误抑制、print、文件包含、eval 和 exit/die 等内置结构；遇到不支持或损坏的结构抛出
  * {@link SyntaxConversionException}，不绑定名称、不推断类型、不执行 PHP。
  * 数字字面量在转换时按 64 位 PHP 7.2 的规则解码为 long/double，原文仍保留在 AST 中。

@@ -63,11 +63,11 @@ class SyntaxConverterTest {
     // 普通变量读取与赋值目标是不同模型；连续赋值保持右结合及原变量名。
     @Test
     void distinguishesVariableReadsFromAssignmentTargets() {
-        assertEquals("value", assertInstanceOf(IrVariable.class, expression("$value")).name());
+        assertEquals("value", fixedName(assertInstanceOf(IrVariable.class, expression("$value")).name()));
         IrAssignment outer = assertInstanceOf(IrAssignment.class, expression("$a = $b = 3"));
-        assertEquals("a", assertInstanceOf(IrVariableTarget.class, outer.target()).name());
+        assertEquals("a", fixedName(assertInstanceOf(IrVariableTarget.class, outer.target()).name()));
         IrAssignment inner = assertInstanceOf(IrAssignment.class, outer.value());
-        assertEquals("b", assertInstanceOf(IrVariableTarget.class, inner.target()).name());
+        assertEquals("b", fixedName(assertInstanceOf(IrVariableTarget.class, inner.target()).name()));
         assertInteger(inner.value(), 3);
     }
 
@@ -80,7 +80,7 @@ class SyntaxConverterTest {
         operators.forEach((token, operator) -> {
             IrUnary unary = assertInstanceOf(IrUnary.class, expression(token + "$a"));
             assertEquals(operator, unary.operator());
-            assertEquals("a", assertInstanceOf(IrVariable.class, unary.operand()).name());
+            assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, unary.operand()).name()));
         });
         IrUnary minus = assertInstanceOf(IrUnary.class, expression("-42"));
         assertInteger(minus.operand(), 42);
@@ -112,8 +112,8 @@ class SyntaxConverterTest {
         operators.forEach((token, operator) -> {
             IrBinary binary = assertInstanceOf(IrBinary.class, expression("$a " + token + " $b"), token);
             assertEquals(operator, binary.operator(), token);
-            assertEquals("a", assertInstanceOf(IrVariable.class, binary.left()).name());
-            assertEquals("b", assertInstanceOf(IrVariable.class, binary.right()).name());
+            assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, binary.left()).name()));
+            assertEquals("b", fixedName(assertInstanceOf(IrVariable.class, binary.right()).name()));
         });
     }
 
@@ -179,7 +179,7 @@ class SyntaxConverterTest {
                 expression("$saved = first() || second() && third() or fallback()"));
         assertEquals(LogicalOperator.OR, outer.operator());
         IrAssignment assignment = assertInstanceOf(IrAssignment.class, outer.left());
-        assertEquals("saved", assertInstanceOf(IrVariableTarget.class, assignment.target()).name());
+        assertEquals("saved", fixedName(assertInstanceOf(IrVariableTarget.class, assignment.target()).name()));
         IrLogical disjunction = assertInstanceOf(IrLogical.class, assignment.value());
         assertEquals(LogicalOperator.OR, disjunction.operator());
         assertEmptyCall(disjunction.left(), "first");
@@ -199,9 +199,9 @@ class SyntaxConverterTest {
         assertVariable(right.left(), "b");
         assertVariable(right.right(), "c");
         IrConditional full = assertInstanceOf(IrConditional.class, expression("$a ? $b : $c"));
-        assertEquals("a", assertInstanceOf(IrVariable.class, full.condition()).name());
-        assertEquals("b", assertInstanceOf(IrVariable.class, full.thenExpression()).name());
-        assertEquals("c", assertInstanceOf(IrVariable.class, full.elseExpression()).name());
+        assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, full.condition()).name()));
+        assertEquals("b", fixedName(assertInstanceOf(IrVariable.class, full.thenExpression()).name()));
+        assertEquals("c", fixedName(assertInstanceOf(IrVariable.class, full.elseExpression()).name()));
         IrConditional shortForm = assertInstanceOf(IrConditional.class, expression("nextValue() ?: fallback()"));
         assertEmptyCall(shortForm.condition(), "nextValue");
         assertNull(shortForm.thenExpression());
@@ -224,12 +224,12 @@ class SyntaxConverterTest {
                 "\\Vendor\\run", NameForm.FULLY_QUALIFIED, "namespace\\run", NameForm.NAMESPACE_RELATIVE);
         names.forEach((name, form) -> {
             IrCall call = assertInstanceOf(IrCall.class, expression(name + "($a, 2, nested())"));
-            assertEquals(name, call.name().spelling());
-            assertEquals(form, call.name().form());
+            assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+            assertEquals(form, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().form());
             assertEquals(3, call.arguments().size());
-            assertEquals("a", assertInstanceOf(IrVariable.class, call.arguments().getFirst()).name());
-            assertInteger(call.arguments().get(1), 2);
-            assertEmptyCall(call.arguments().get(2), "nested");
+            assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, call.arguments().getFirst().expression()).name()));
+            assertInteger(call.arguments().get(1).expression(), 2);
+            assertEmptyCall(call.arguments().get(2).expression(), "nested");
         });
     }
 
@@ -238,18 +238,18 @@ class SyntaxConverterTest {
     void preservesAssignmentsWithinOrderedCallArguments() {
         IrCall call = assertInstanceOf(IrCall.class,
                 expression("dispatch($a = first(), second($b = third()), $a)"));
-        assertEquals("dispatch", call.name().spelling());
+        assertEquals("dispatch", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
         assertEquals(3, call.arguments().size());
-        IrAssignment first = assertInstanceOf(IrAssignment.class, call.arguments().getFirst());
-        assertEquals("a", assertInstanceOf(IrVariableTarget.class, first.target()).name());
+        IrAssignment first = assertInstanceOf(IrAssignment.class, call.arguments().getFirst().expression());
+        assertEquals("a", fixedName(assertInstanceOf(IrVariableTarget.class, first.target()).name()));
         assertEmptyCall(first.value(), "first");
-        IrCall second = assertInstanceOf(IrCall.class, call.arguments().get(1));
-        assertEquals("second", second.name().spelling());
+        IrCall second = assertInstanceOf(IrCall.class, call.arguments().get(1).expression());
+        assertEquals("second", assertInstanceOf(IrNamedCallTarget.class, second.target()).name().spelling());
         assertEquals(1, second.arguments().size());
-        IrAssignment nested = assertInstanceOf(IrAssignment.class, second.arguments().getFirst());
-        assertEquals("b", assertInstanceOf(IrVariableTarget.class, nested.target()).name());
+        IrAssignment nested = assertInstanceOf(IrAssignment.class, second.arguments().getFirst().expression());
+        assertEquals("b", fixedName(assertInstanceOf(IrVariableTarget.class, nested.target()).name()));
         assertEmptyCall(nested.value(), "third");
-        assertVariable(call.arguments().get(2), "a");
+        assertVariable(call.arguments().get(2).expression(), "a");
     }
 
     // return 无值与返回 null 分开表示；echo 参数、表达式语句、块及空语句保持顺序。
@@ -261,7 +261,7 @@ class SyntaxConverterTest {
                 assertInstanceOf(IrExpressionStatement.class, block.statements().getFirst()).expression());
         IrEcho echo = assertInstanceOf(IrEcho.class, block.statements().get(1));
         assertEquals(3, echo.expressions().size());
-        assertEquals("a", assertInstanceOf(IrVariable.class, echo.expressions().getFirst()).name());
+        assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, echo.expressions().getFirst()).name()));
         assertLiteral(echo.expressions().get(1), LiteralKind.STRING, "'next'");
         assertInteger(echo.expressions().get(2), 3);
         assertNull(assertInstanceOf(IrReturn.class, block.statements().get(2)).value());
@@ -278,7 +278,7 @@ class SyntaxConverterTest {
                 "if ($a): echo 1; elseif ($b): echo 2; elseif ($c): ; else: return 3; endif;")) {
             IrIf conditional = assertInstanceOf(IrIf.class, body(code).statements().getFirst());
             assertEquals(List.of("a", "b", "c"), conditional.branches().stream()
-                    .map(branch -> assertInstanceOf(IrVariable.class, branch.condition()).name()).toList());
+                    .map(branch -> fixedName(assertInstanceOf(IrVariable.class, branch.condition()).name())).toList());
             for (int i = 0; i < 2; i++) {
                 IrEcho echo = assertInstanceOf(IrEcho.class, conditional.branches().get(i).body().statements().getFirst());
                 assertInteger(echo.expressions().getFirst(), i + 1);
@@ -391,7 +391,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { $callback(); }
+                function unrelated() { __LINE__; }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -419,7 +419,6 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
-                "$$a", "$callback()", "f(...$args)",
                 "$a =& $b",
                 "function () {}", "\"$a\"", "__LINE__",
                 "yield 1",
@@ -436,7 +435,7 @@ class SyntaxConverterTest {
     // 文法中的 variable 也包括调用，但这些表达式不是本阶段允许的可写赋值目标。
     @Test
     void rejectsUnsupportedAssignmentRootsEvenWhenGrammarAcceptsThem() {
-        for (String code : List.of("f() = 1", "$$a = 1")) {
+        for (String code : List.of("f() = 1", "$callback() = 1")) {
             SyntaxExpression syntax = syntaxExpression(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertExpression(syntax), code);
         }
@@ -446,7 +445,7 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "global $a;", "$callback();",
+                "global $a;", "__LINE__;",
                 "function nested() {}", "class Nested {}", "goto end; end: ;")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
@@ -483,13 +482,13 @@ class SyntaxConverterTest {
     }
 
     private static void assertVariable(IrExpression actual, String name) {
-        assertEquals(name, assertInstanceOf(IrVariable.class, actual).name());
+        assertEquals(name, fixedName(assertInstanceOf(IrVariable.class, actual).name()));
     }
 
     private static void assertEmptyCall(IrExpression actual, String name) {
         IrCall call = assertInstanceOf(IrCall.class, actual);
-        assertEquals(name, call.name().spelling());
-        assertEquals(NameForm.UNQUALIFIED, call.name().form());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(NameForm.UNQUALIFIED, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().form());
         assertTrue(call.arguments().isEmpty());
     }
 
@@ -511,5 +510,9 @@ class SyntaxConverterTest {
         IrConstantReference constant = assertInstanceOf(IrConstantReference.class, expression(spelling));
         assertEquals(spelling, constant.name().spelling());
         assertEquals(form, constant.name().form());
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }

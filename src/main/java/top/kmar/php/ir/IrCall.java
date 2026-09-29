@@ -1,16 +1,15 @@
 package top.kmar.php.ir;
 
-import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SourceInfo;
 
 import java.util.List;
 import java.util.Objects;
 
-/** 按名称发起的函数调用；实参保持原顺序，函数名称尚未解析或绑定。 */
-public record IrCall(NameReference name, List<IrExpression> arguments, SourceInfo source)
+/** 具名函数或动态 callable 调用；目标与实参仅保存一次，不进行绑定或参数展开。 */
+public record IrCall(IrCallTarget target, List<IrArgument> arguments, SourceInfo source)
         implements IrExpression {
     public IrCall {
-        Objects.requireNonNull(name, "name");
+        Objects.requireNonNull(target, "target");
         arguments = List.copyOf(arguments);
         Objects.requireNonNull(source, "source");
     }

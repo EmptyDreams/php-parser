@@ -4,8 +4,8 @@ import top.kmar.php.model.SourceInfo;
 
 import java.util.Objects;
 
-/** 固定名称的实例属性读取，属性名保留拼写且不包含 $。 */
-public record IrPropertyAccess(IrExpression receiver, String property, SourceInfo source)
+/** 实例属性读取，接收者和计算式属性名称分别保存且不求值。 */
+public record IrPropertyAccess(IrExpression receiver, IrAccessName property, SourceInfo source)
         implements IrExpression {
     public IrPropertyAccess {
         Objects.requireNonNull(receiver, "receiver");

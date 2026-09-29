@@ -27,11 +27,11 @@ class ObjectConversionTest {
         }
         IrNew value = assertInstanceOf(IrNew.class, expression("new Thing(first(), $x = 2, [3])"));
         assertEquals(3, value.arguments().size());
-        assertCall(value.arguments().getFirst(), "first");
-        IrAssignment assignment = assertInstanceOf(IrAssignment.class, value.arguments().get(1));
+        assertCall(value.arguments().getFirst().expression(), "first");
+        IrAssignment assignment = assertInstanceOf(IrAssignment.class, value.arguments().get(1).expression());
         assertVariableTarget(assignment.target(), "x");
         assertInteger(assignment.value(), 2);
-        IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, value.arguments().get(2));
+        IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, value.arguments().get(2).expression());
         assertEquals(1, array.entries().size());
         assertInteger(array.entries().getFirst().value(), 3);
     }
@@ -83,7 +83,7 @@ class ObjectConversionTest {
         IrClone clone = assertInstanceOf(IrClone.class, expression("clone new Thing(1)"));
         IrNew constructed = assertInstanceOf(IrNew.class, clone.expression());
         assertNamedClass(constructed.classReference(), "Thing", NameForm.UNQUALIFIED);
-        assertInteger(constructed.arguments().getFirst(), 1);
+        assertInteger(constructed.arguments().getFirst().expression(), 1);
 
         IrUnary negation = assertInstanceOf(IrUnary.class, expression("!$value instanceof Thing"));
         assertEquals(UnaryOperator.NOT, negation.operator());
@@ -99,20 +99,20 @@ class ObjectConversionTest {
     void preservesMixedInstanceReadAndCallChains() {
         IrPropertyAccess result = assertInstanceOf(IrPropertyAccess.class,
                 expression("$this->service->Run(first(), 2)[next()]->Value"));
-        assertEquals("Value", result.property());
+        assertEquals("Value", fixedName(result.property()));
         IrIndex index = assertInstanceOf(IrIndex.class, result.receiver());
         assertCall(index.index(), "next");
         IrMethodCall call = assertInstanceOf(IrMethodCall.class, index.base());
-        assertEquals("Run", call.method());
+        assertEquals("Run", fixedName(call.method()));
         assertEquals(2, call.arguments().size());
-        assertCall(call.arguments().getFirst(), "first");
-        assertInteger(call.arguments().get(1), 2);
+        assertCall(call.arguments().getFirst().expression(), "first");
+        assertInteger(call.arguments().get(1).expression(), 2);
         IrPropertyAccess service = assertInstanceOf(IrPropertyAccess.class, call.receiver());
-        assertEquals("service", service.property());
+        assertEquals("service", fixedName(service.property()));
         assertVariable(service.receiver(), "this");
 
         IrMethodCall fresh = assertInstanceOf(IrMethodCall.class, expression("(new Thing)->run()"));
-        assertEquals("run", fresh.method());
+        assertEquals("run", fixedName(fresh.method()));
         assertTrue(fresh.arguments().isEmpty());
         assertInstanceOf(IrNew.class, fresh.receiver());
         assertInstanceOf(IrNew.class,
@@ -123,14 +123,14 @@ class ObjectConversionTest {
     @Test
     void convertsStaticPropertiesCallsAndConstants() {
         IrStaticPropertyAccess property = assertInstanceOf(IrStaticPropertyAccess.class, expression("Box::$Items"));
-        assertEquals("Items", property.property());
+        assertEquals("Items", fixedName(property.property()));
         assertNamedClass(property.classReference(), "Box", NameForm.UNQUALIFIED);
         IrStaticCall call = assertInstanceOf(IrStaticCall.class, expression("Box::Make(first(), second())"));
-        assertEquals("Make", call.method());
+        assertEquals("Make", fixedName(call.method()));
         assertNamedClass(call.classReference(), "Box", NameForm.UNQUALIFIED);
         assertEquals(2, call.arguments().size());
-        assertCall(call.arguments().getFirst(), "first");
-        assertCall(call.arguments().get(1), "second");
+        assertCall(call.arguments().getFirst().expression(), "first");
+        assertCall(call.arguments().get(1).expression(), "second");
         IrClassConstantReference constant = assertInstanceOf(IrClassConstantReference.class, expression("Box::Value"));
         assertEquals("Value", constant.constantName());
         assertNamedClass(constant.classReference(), "Box", NameForm.UNQUALIFIED);
@@ -146,15 +146,15 @@ class ObjectConversionTest {
             assertNamedClass(assertInstanceOf(IrClassName.class, expression("Box::" + name))
                     .classReference(), "Box", NameForm.UNQUALIFIED);
             IrStaticCall call = assertInstanceOf(IrStaticCall.class, expression("Box::" + name + "()"));
-            assertEquals(name, call.method());
+            assertEquals(name, fixedName(call.method()));
             assertTrue(call.arguments().isEmpty());
         }
         for (String name : List.of("public", "static", "yield", "__METHOD__")) {
-            assertEquals(name, assertInstanceOf(IrStaticCall.class, expression("Box::" + name + "()")).method());
+            assertEquals(name, fixedName(assertInstanceOf(IrStaticCall.class, expression("Box::" + name + "()")).method()));
             assertEquals(name,
                     assertInstanceOf(IrClassConstantReference.class, expression("Box::" + name)).constantName());
-            assertEquals(name, assertInstanceOf(IrMethodCall.class, expression("$a->" + name + "()")).method());
-            assertEquals(name, assertInstanceOf(IrPropertyAccess.class, expression("$a->" + name)).property());
+            assertEquals(name, fixedName(assertInstanceOf(IrMethodCall.class, expression("$a->" + name + "()")).method()));
+            assertEquals(name, fixedName(assertInstanceOf(IrPropertyAccess.class, expression("$a->" + name)).property()));
         }
     }
 
@@ -163,24 +163,24 @@ class ObjectConversionTest {
     void separatesPropertyTargetsFromPropertyReads() {
         IrAssignment assignment = assignment("$this->child->value = Box::$value");
         IrPropertyTarget value = assertInstanceOf(IrPropertyTarget.class, assignment.target());
-        assertEquals("value", value.property());
+        assertEquals("value", fixedName(value.property()));
         IrPropertyTarget child = assertInstanceOf(IrPropertyTarget.class, value.receiver());
-        assertEquals("child", child.property());
+        assertEquals("child", fixedName(child.property()));
         assertVariableTarget(child.receiver(), "this");
-        assertEquals("value", assertInstanceOf(IrStaticPropertyAccess.class, assignment.value()).property());
+        assertEquals("value", fixedName(assertInstanceOf(IrStaticPropertyAccess.class, assignment.value()).property()));
 
         IrAssignment staticWrite = assignment("Box::$value = $this->value");
         IrStaticPropertyTarget target = assertInstanceOf(IrStaticPropertyTarget.class, staticWrite.target());
-        assertEquals("value", target.property());
+        assertEquals("value", fixedName(target.property()));
         assertNamedClass(target.classReference(), "Box", NameForm.UNQUALIFIED);
-        assertEquals("value", assertInstanceOf(IrPropertyAccess.class, staticWrite.value()).property());
+        assertEquals("value", fixedName(assertInstanceOf(IrPropertyAccess.class, staticWrite.value()).property()));
     }
 
     // 属性、下标与追加在同一目标链里递归保存，括号和花括号不额外添加语义节点。
     @Test
     void preservesMixedPropertyIndexAndAppendTargets() {
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, assignment("$a[]->p = 1").target());
-        assertEquals("p", property.property());
+        assertEquals("p", fixedName(property.property()));
         IrIndexTarget append = assertInstanceOf(IrIndexTarget.class, property.receiver());
         assertNull(append.index());
         assertVariableTarget(append.base(), "a");
@@ -190,7 +190,7 @@ class ObjectConversionTest {
         IrIndexTarget middle = assertInstanceOf(IrIndexTarget.class, indexed.base());
         assertCall(middle.index(), "next");
         IrPropertyTarget items = assertInstanceOf(IrPropertyTarget.class, middle.base());
-        assertEquals("items", items.property());
+        assertEquals("items", fixedName(items.property()));
         assertVariableTarget(items.receiver(), "a");
 
         IrPropertyTarget staticChain = assertInstanceOf(IrPropertyTarget.class,
@@ -198,7 +198,7 @@ class ObjectConversionTest {
         IrIndexTarget staticAppend = assertInstanceOf(IrIndexTarget.class, staticChain.receiver());
         assertNull(staticAppend.index());
         IrStaticPropertyTarget root = assertInstanceOf(IrStaticPropertyTarget.class, staticAppend.base());
-        assertEquals("items", root.property());
+        assertEquals("items", fixedName(root.property()));
         assertNamedClass(root.classReference(), "Box", NameForm.UNQUALIFIED);
     }
 
@@ -207,7 +207,7 @@ class ObjectConversionTest {
     void wrapsCallResultsOnlyAsWriteBases() {
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class,
                 assignment("factory()->p = 1").target());
-        assertEquals("p", property.property());
+        assertEquals("p", fixedName(property.property()));
         assertCall(assertInstanceOf(IrExpressionWriteBase.class, property.receiver()).expression(), "factory");
 
         IrPropertyTarget indexed = assertInstanceOf(IrPropertyTarget.class,
@@ -223,13 +223,13 @@ class ObjectConversionTest {
                 assignment("$obj->make()->p = 4").target());
         IrMethodCall receiver = assertInstanceOf(IrMethodCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, method.receiver()).expression());
-        assertEquals("make", receiver.method());
+        assertEquals("make", fixedName(receiver.method()));
         assertVariable(receiver.receiver(), "obj");
         IrIndexTarget staticResult = assertInstanceOf(IrIndexTarget.class,
                 assignment("Box::make()[0] = 5").target());
         assertInteger(staticResult.index(), 0);
-        assertEquals("make", assertInstanceOf(IrStaticCall.class,
-                assertInstanceOf(IrExpressionWriteBase.class, staticResult.base()).expression()).method());
+        assertEquals("make", fixedName(assertInstanceOf(IrStaticCall.class,
+                assertInstanceOf(IrExpressionWriteBase.class, staticResult.base()).expression()).method()));
     }
 
     // 复合赋值和前后置更新共用目标转换，不能只在普通赋值中允许对象写链。
@@ -273,12 +273,12 @@ class ObjectConversionTest {
         IrIndexTarget index = assertInstanceOf(IrIndexTarget.class, assignment.target());
         assertCall(index.index(), "next");
         IrPropertyTarget property = assertInstanceOf(IrPropertyTarget.class, index.base());
-        assertEquals("items", property.property());
+        assertEquals("items", fixedName(property.property()));
         IrCall factory = assertInstanceOf(IrCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, property.receiver()).expression());
-        assertEquals("factory", factory.name().spelling());
+        assertEquals("factory", assertInstanceOf(IrNamedCallTarget.class, factory.target()).name().spelling());
         assertEquals(1, factory.arguments().size());
-        assertCall(factory.arguments().getFirst(), "first");
+        assertCall(factory.arguments().getFirst().expression(), "first");
         assertCall(assignment.value(), "rhs");
     }
 
@@ -288,12 +288,12 @@ class ObjectConversionTest {
         IrForeach loop = assertInstanceOf(IrForeach.class, body(
                 "foreach ($items as Box::$keys[]->id => factory()[0]->value) ;").statements().getFirst());
         IrPropertyTarget key = assertInstanceOf(IrPropertyTarget.class, loop.keyTarget());
-        assertEquals("id", key.property());
+        assertEquals("id", fixedName(key.property()));
         IrIndexTarget append = assertInstanceOf(IrIndexTarget.class, key.receiver());
         assertNull(append.index());
-        assertEquals("keys", assertInstanceOf(IrStaticPropertyTarget.class, append.base()).property());
+        assertEquals("keys", fixedName(assertInstanceOf(IrStaticPropertyTarget.class, append.base()).property()));
         IrPropertyTarget value = assertInstanceOf(IrPropertyTarget.class, loop.valueTarget());
-        assertEquals("value", value.property());
+        assertEquals("value", fixedName(value.property()));
         IrIndexTarget index = assertInstanceOf(IrIndexTarget.class, value.receiver());
         assertInteger(index.index(), 0);
         assertCall(assertInstanceOf(IrExpressionWriteBase.class, index.base()).expression(), "factory");
@@ -309,16 +309,10 @@ class ObjectConversionTest {
         }
     }
 
-    // 名称值相同也不折叠动态写法，动态类/成员、匿名类和参数解包继续明确报错。
+    // 动态访问与实参解包已有专门测试；匿名类仍位于当前转换子集之外。
     @Test
-    void rejectsDynamicNamesAnonymousClassesAndUnpackedArguments() {
-        for (String code : List.of("new $class", "new $classes[0]", "$a instanceof $class",
-                "$a->$name", "$a->{'value'}", "$a->$method()", "$a->{'run'}()",
-                "$class::$p", "$class::run()", "$class::VALUE", "$class::class",
-                "Box::$$p", "Box::${$p}", "Box::$method()", "Box::{'run'}()",
-                "new class {}", "new Box(...$args)", "$a->run(...$args)", "Box::run(...$args)")) {
-            assertRejected(code);
-        }
+    void rejectsAnonymousClasses() {
+        assertRejected("new class {}");
     }
 
     // 常量、字面量、运算或临时对象不作为写根；调用虽可接后续访问但不能独立赋值。
@@ -374,19 +368,23 @@ class ObjectConversionTest {
 
     private static void assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, call.name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
         assertTrue(call.arguments().isEmpty());
     }
 
     private static void assertVariable(IrExpression expression, String name) {
-        assertEquals(name, assertInstanceOf(IrVariable.class, expression).name());
+        assertEquals(name, fixedName(assertInstanceOf(IrVariable.class, expression).name()));
     }
 
     private static void assertVariableTarget(IrWriteBase base, String name) {
-        assertEquals(name, assertInstanceOf(IrVariableTarget.class, base).name());
+        assertEquals(name, fixedName(assertInstanceOf(IrVariableTarget.class, base).name()));
     }
 
     private static void assertInteger(IrExpression expression, long value) {
         assertEquals(value, assertInstanceOf(IrIntegerLiteral.class, expression).value());
+    }
+
+    private static String fixedName(IrAccessName name) {
+        return assertInstanceOf(IrFixedName.class, name).value();
     }
 }
