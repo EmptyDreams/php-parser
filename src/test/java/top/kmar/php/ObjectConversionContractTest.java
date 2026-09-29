@@ -38,6 +38,7 @@ class ObjectConversionContractTest {
                 failure(new NodeExprWithoutVariable.Instanceof(value, token("instanceof"), null, LOCATION), ".classRef"),
                 failure(new NodeExprWithoutVariable.Instanceof(value, null, classReference, LOCATION), ".op"),
                 failure(new NodeExprWithoutVariable.Instanceof(value, token("is"), classReference, LOCATION), ".op"))) {
+            //noinspection ThrowableNotThrown
             assertFailure(test.expression(), test.pathPart());
         }
         IrNew withoutParentheses = assertInstanceOf(IrNew.class, convert(expression("new C")));
@@ -88,6 +89,7 @@ class ObjectConversionContractTest {
                 new FailureCase(staticCallExpression(className(LOCATION), new NodeMemberName.IdentifierName(
                         new NodeIdentifier.SemiReservedIdentifier(new NodeSemiReserved.Reserved(null, LOCATION), LOCATION),
                         LOCATION), arguments), ".keyword"))) {
+            //noinspection ThrowableNotThrown
             assertFailure(test.expression(), test.pathPart());
         }
     }
@@ -99,12 +101,17 @@ class ObjectConversionContractTest {
                 new NodeClassName.NamedClass(null, LOCATION),
                 new NodeClassName.StaticClass(null, LOCATION),
                 new NodeClassName.StaticClass(token("not-static"), LOCATION))) {
+            //noinspection ThrowableNotThrown
             assertFailure(newExpression(new NodeClassNameReference.ClassName(clazz, LOCATION), null), ".clazz");
+            //noinspection ThrowableNotThrown
             assertFailure(staticCallExpression(clazz, member(), emptyArguments()), ".clazz");
         }
+        //noinspection ThrowableNotThrown
         assertFailure(constantExpression(new NodeConstant.ClassConstant(null,
                 new NodeIdentifier.Identifier(token("VALUE"), LOCATION), LOCATION)), ".clazz");
+        //noinspection ThrowableNotThrown
         assertFailure(constantExpression(new NodeConstant.ClassConstant(className(LOCATION), null, LOCATION)), ".member");
+        //noinspection ThrowableNotThrown
         assertFailure(constantExpression(new NodeConstant.ClassConstant(className(LOCATION),
                 new NodeIdentifier.Identifier(null, LOCATION), LOCATION)), ".name");
     }
@@ -150,6 +157,7 @@ class ObjectConversionContractTest {
                 staticCallExpression(className(LOCATION), unknownMember, emptyArguments()),
                 constantExpression(new NodeConstant.ClassConstant(className(LOCATION), unknownIdentifier, LOCATION)),
                 variableExpression(new NodeVariable.StaticMember(unknownStaticMember, LOCATION)))) {
+            //noinspection ThrowableNotThrown
             assertFailure(invalid, "expression");
         }
     }
@@ -170,8 +178,11 @@ class ObjectConversionContractTest {
                 new NodeArgumentList.Args(new NodeListNodeArgument(nullEntry, LOCATION), LOCATION),
                 new NodeArgumentList.Args(new NodeListNodeArgument(
                         List.of(new NodeArgument.Arg(null, LOCATION)), LOCATION), LOCATION))) {
+            //noinspection ThrowableNotThrown
             assertFailure(newExpression(classReference(LOCATION), arguments), ".ctorArgs");
+            //noinspection ThrowableNotThrown
             assertFailure(methodExpression(receiver(), property(), arguments), ".args");
+            //noinspection ThrowableNotThrown
             assertFailure(staticCallExpression(className(LOCATION), member(), arguments), ".args");
         }
     }
