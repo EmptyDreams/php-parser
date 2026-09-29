@@ -439,12 +439,25 @@ class SyntaxConverterTest {
         }
     }
 
-    // 嵌套声明和其它非子集语句一律报错，不跳过其可执行内容。
+    // global、goto 与标签保留原语句顺序，不在转换时绑定全局变量或跳转目标。
+    @Test
+    void preservesGlobalAndGotoStatementsWithoutResolvingBindings() {
+        IrBlock block = body("global $a; goto end; end: ;");
+        assertEquals(4, block.statements().size());
+        IrGlobal global = assertInstanceOf(IrGlobal.class, block.statements().getFirst());
+        assertEquals(1, global.variables().size());
+        assertEquals("a", fixedName(global.variables().getFirst().name()));
+        assertEquals("end", assertInstanceOf(IrGoto.class, block.statements().get(1)).label());
+        assertEquals("end", assertInstanceOf(IrLabel.class, block.statements().get(2)).name());
+        assertInstanceOf(IrEmpty.class, block.statements().get(3));
+    }
+
+    // 嵌套声明和未支持子树一律报错，global 或跳转外壳不能跳过其可执行内容。
     @Test
     void rejectsUnsupportedStatementsAndNestedDeclarations() {
         for (String code : List.of(
-                "global $a;", "(new class {});",
-                "function nested() {}", "class Nested {}", "goto end; end: ;")) {
+                "global ${(new class {})};", "(new class {});",
+                "function nested() {}", "class Nested {}", "goto end; end: (new class {});")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
         }

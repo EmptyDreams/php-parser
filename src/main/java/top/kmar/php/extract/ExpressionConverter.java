@@ -513,10 +513,8 @@ final class ExpressionConverter {
         return switch (node) {
             case NodeCallableVariable.FunctionCall ignored -> expressionWriteBase(callableVariable(node, path));
             case NodeCallableVariable.MethodCall ignored -> expressionWriteBase(callableVariable(node, path));
-            case NodeCallableVariable.SimpleVar ignored -> {
-                NodeSimpleVariable simple = context.required(node.getSv(), node, path + ".sv");
-                yield new IrVariableTarget(variableName(simple, path + ".sv"), context.source(simple));
-            }
+            case NodeCallableVariable.SimpleVar ignored -> simpleVariableTarget(
+                    context.required(node.getSv(), node, path + ".sv"), path + ".sv");
             case NodeCallableVariable.Index ignored -> new IrIndexTarget(
                     dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d", allowAppend),
                     targetIndex(node.getOffset(), node, path + ".offset", allowAppend),
@@ -595,6 +593,11 @@ final class ExpressionConverter {
 
     private IrVariable simpleVariable(NodeSimpleVariable node, String path) {
         return new IrVariable(variableName(node, path), context.source(node));
+    }
+
+    /** global 和普通变量写目标共用名称转换；计算名称时仍读取表达式。 */
+    IrVariableTarget simpleVariableTarget(NodeSimpleVariable node, String path) {
+        return new IrVariableTarget(variableName(node, path), context.source(node));
     }
 
     /** 变量自身及静态属性共享名称规则：C::$p 是固定名称，C::$$p 才读取 $p 计算名称。 */

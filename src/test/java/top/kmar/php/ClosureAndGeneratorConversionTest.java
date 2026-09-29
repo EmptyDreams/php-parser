@@ -331,12 +331,36 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(referenceClosure.captures().getFirst().byReference());
     }
 
-    // 新增外壳不吞掉未支持的子树；匿名类、声明及局部作用域结构继续明确失败。
+    // global 和局部 static 留在所属闭包体内，嵌套闭包的全局绑定不能被提升或变成捕获项。
+    @Test
+    void preservesLocalScopeStatementsAcrossNestedClosures() {
+        IrClosure outer = closure("function() { global $value; static $counter = 1; "
+                + "return function() { global $value; }; }");
+        assertEquals(3, outer.body().statements().size());
+        IrGlobal global = assertInstanceOf(IrGlobal.class, outer.body().statements().getFirst());
+        assertEquals(1, global.variables().size());
+        assertFixed(global.variables().getFirst().name(), "value");
+        IrStaticVariables locals = assertInstanceOf(IrStaticVariables.class, outer.body().statements().get(1));
+        assertEquals(1, locals.variables().size());
+        assertEquals("counter", locals.variables().getFirst().name());
+        assertInteger(locals.variables().getFirst().initializer(), 1);
+        IrClosure inner = assertInstanceOf(IrClosure.class,
+                assertInstanceOf(IrReturn.class, outer.body().statements().get(2)).value());
+        assertEquals(1, inner.body().statements().size());
+        IrGlobal nestedGlobal = assertInstanceOf(IrGlobal.class, inner.body().statements().getFirst());
+        assertEquals(1, nestedGlobal.variables().size());
+        assertFixed(nestedGlobal.variables().getFirst().name(), "value");
+        assertTrue(outer.captures().isEmpty());
+        assertTrue(inner.captures().isEmpty());
+    }
+
+    // 新增外壳不吞掉未支持的子树；匿名类和嵌套命名声明继续明确失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewExpressionPosition() {
         for (String code : List.of("function($value = (new class {})) {}", "function() { (new class {}); }",
-                "function() { return function() { global $value; }; }", "function() { global $value; }",
-                "function() { static $value = 1; }", "function() { function nested() {} }",
+                "function() { return function() { (new class {}); }; }",
+                "function() { global ${(new class {})}; }",
+                "function() { static $value = (new class {}); }", "function() { function nested() {} }",
                 "function() { class Nested {} }", "function() { return new class {}; }",
                 "yield (new class {})", "yield (new class {}) => 1", "yield 1 => (new class {})", "yield from (new class {})")) {
             assertRejected(code);

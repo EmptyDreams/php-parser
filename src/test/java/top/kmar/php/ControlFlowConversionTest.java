@@ -304,14 +304,28 @@ class ControlFlowConversionTest {
         }
     }
 
-    // 已支持外壳不会吞掉内部未知语法，分支、处理器和 finally 中的声明仍必须明确失败。
+    // default 分支中的 global 保留在原分支内，不能被当成文件级声明提升。
+    @Test
+    void preservesGlobalStatementsInsideDefaultBranches() {
+        IrSwitch statement = assertInstanceOf(IrSwitch.class,
+                only("switch ($value) { default: global $value; }"));
+        assertEquals(1, statement.cases().size());
+        IrSwitchCase branch = statement.cases().getFirst();
+        assertNull(branch.condition());
+        assertEquals(1, branch.body().statements().size());
+        IrGlobal global = assertInstanceOf(IrGlobal.class, branch.body().statements().getFirst());
+        assertEquals(1, global.variables().size());
+        assertEquals("value", fixedName(global.variables().getFirst().name()));
+    }
+
+    // 已支持外壳不会吞掉内部未知语法，分支、处理器和 finally 中的命名声明仍必须明确失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewStatementPosition() {
         for (String code : List.of(
                 "switch ((new class {})) {}",
                 "switch ($value) { case (new class {}): ; }",
                 "switch ($value) { case 1: (new class {}); }",
-                "switch ($value) { default: global $value; }",
+                "switch ($value) { default: function nestedDefault() {} }",
                 "switch ($value) { case 1: function nested() {} }",
                 "try { (new class {}); } finally {}",
                 "try {} catch (Problem $error) { (new class {}); }",

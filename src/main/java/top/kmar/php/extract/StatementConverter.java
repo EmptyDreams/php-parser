@@ -55,6 +55,13 @@ final class StatementConverter {
                     : expressions.convert(ret.getValue(), path + ".value"), context.source(ret));
             case NodeStatement.Echo echo -> echo(echo, path);
             case NodeStatement.Unset unset -> unset(unset, path);
+            case NodeStatement.Global stmt -> global(stmt, path);
+            case NodeStatement.Static stmt -> staticVariables(stmt, path);
+            case NodeStatement.Declare stmt -> declare(stmt, path);
+            case NodeStatement.Goto stmt -> new IrGoto(
+                    context.text(stmt.getLabel(), stmt, path + ".label"), context.source(stmt));
+            case NodeStatement.Label stmt -> new IrLabel(
+                    context.text(stmt.getLabel(), stmt, path + ".label"), context.source(stmt));
             case NodeStatement.If stmt -> standardIf(
                     context.required(stmt.getIfStmt(), stmt, path + ".ifStmt"), path + ".ifStmt");
             case NodeStatement.AltIf stmt -> alternateIf(
@@ -115,6 +122,70 @@ final class StatementConverter {
             targets.add(expressions.unsetTarget(values.get(i), path + ".unsetVars[" + i + "]"));
         }
         return new IrUnset(targets, context.source(node));
+    }
+
+    private IrGlobal global(NodeStatement.Global node, String path) {
+        var list = context.required(node.getGlobalVars(), node, path + ".globalVars");
+        var values = context.elements(list.getValue(), list, path + ".globalVars");
+        if (values.isEmpty()) throw context.error(node, path + ".globalVars", "global 至少需要一个变量");
+        var variables = new ArrayList<IrVariableTarget>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            variables.add(expressions.simpleVariableTarget(values.get(i), path + ".globalVars[" + i + "]"));
+        }
+        return new IrGlobal(variables, context.source(node));
+    }
+
+    private IrStaticVariables staticVariables(NodeStatement.Static node, String path) {
+        var list = context.required(node.getStaticVars(), node, path + ".staticVars");
+        var values = context.elements(list.getValue(), list, path + ".staticVars");
+        if (values.isEmpty()) throw context.error(node, path + ".staticVars", "static 至少需要一个变量");
+        var variables = new ArrayList<IrStaticVariable>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            var variable = values.get(i);
+            String variablePath = path + ".staticVars[" + i + "]";
+            if (!(variable instanceof NodeStaticVar.StaticVar || variable instanceof NodeStaticVar.StaticVarWithDefault)) {
+                throw context.error(variable, variablePath, "无法识别的局部 static 变量结构");
+            }
+            String name = context.text(variable.getVar(), variable, variablePath + ".var");
+            IrExpression initializer = variable instanceof NodeStaticVar.StaticVarWithDefault
+                    ? expressions.convert(context.required(variable.getDefaultValue(), variable,
+                    variablePath + ".defaultValue"), variablePath + ".defaultValue") : null;
+            variables.add(new IrStaticVariable(name, initializer, context.source(variable)));
+        }
+        return new IrStaticVariables(variables, context.source(node));
+    }
+
+    private IrDeclare declare(NodeStatement.Declare node, String path) {
+        var list = context.required(node.getDirectives(), node, path + ".directives");
+        var values = context.elements(list.getValue(), list, path + ".directives");
+        if (values.isEmpty()) throw context.error(node, path + ".directives", "declare 至少需要一个指令");
+        var directives = new ArrayList<IrDeclareDirective>(values.size());
+        for (int i = 0; i < values.size(); i++) {
+            var directive = values.get(i);
+            String directivePath = path + ".directives[" + i + "]";
+            if (!(directive instanceof NodeConstDecl.ConstDecl)) {
+                throw context.error(directive, directivePath, "无法识别的 declare 指令结构");
+            }
+            directives.add(new IrDeclareDirective(
+                    context.text(directive.getName(), directive, directivePath + ".name"),
+                    expressions.convert(context.required(directive.getValue(), directive, directivePath + ".value"),
+                            directivePath + ".value"), context.source(directive)));
+        }
+        return new IrDeclare(directives,
+                declareBody(context.required(node.getDeclareBody(), node, path + ".declareBody"), path + ".declareBody"),
+                context.source(node));
+    }
+
+    private @Nullable IrBlock declareBody(NodeDeclareStatement node, String path) {
+        return switch (node) {
+            case NodeDeclareStatement.Body body -> {
+                var statement = context.required(body.getBody(), body, path + ".body");
+                // 直接分号没有局部主体，不能与显式空块合并，也不吸收后续语句。
+                yield statement.getClass() == NodeStatement.class ? null : statementBlock(statement, path + ".body");
+            }
+            case NodeDeclareStatement.AltBody body -> innerBlock(body.getStmts(), body, path + ".stmts");
+            default -> throw context.error(node, path, "无法识别的 declare 主体结构");
+        };
     }
 
     /** CUP 1.1.0 的 * 空产生式返回空列表；包装和 value 均不可缺失。 */

@@ -483,7 +483,20 @@ class ReferenceAndDestructuringConversionTest {
         assertInstanceOf(IrYieldFrom.class, statementExpression(closure.body(), 1));
     }
 
-    // 新容器仍递归拒绝未支持的子树，不把匿名类、声明或局部变量声明悄悄跳过。
+    // 引用 foreach 体内的 global 独立保存，不改变外层引用迭代来源和值目标。
+    @Test
+    void preservesGlobalStatementsInsideReferenceForeachBodies() {
+        IrForeach loop = foreach("foreach ($items as &$value) { global $other; }");
+        assertTrue(loop.byReference());
+        assertVariableTarget(assertInstanceOf(IrWritableIterable.class, loop.iterable()).target(), "items");
+        assertVariableTarget(loop.valueTarget(), "value");
+        assertEquals(1, loop.body().statements().size());
+        IrGlobal global = assertInstanceOf(IrGlobal.class, loop.body().statements().getFirst());
+        assertEquals(1, global.variables().size());
+        assertVariableTarget(global.variables().getFirst(), "other");
+    }
+
+    // 新容器仍递归拒绝未支持的子树，不把匿名类或嵌套命名声明悄悄跳过。
     @Test
     void propagatesUnsupportedSubtreesThroughEveryNewContainer() {
         for (String code : List.of("$left =& $right[(new class {})]", "$left[(new class {})] =& $right",
@@ -495,7 +508,7 @@ class ReferenceAndDestructuringConversionTest {
         for (String code : List.of("foreach ((new class {}) as &$value) {}",
                 "foreach ($items[(new class {})] as &$value) {}",
                 "foreach ($items as [$items[(new class {})]]) {}",
-                "foreach ($items as &$value) { global $other; }",
+                "foreach ($items as &$value) { global ${(new class {})}; }",
                 "foreach ($items as [$value]) { function nested() {} }")) {
             assertRejectedBody(code);
         }
