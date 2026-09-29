@@ -281,15 +281,17 @@ class StringConversionTest {
         String large = "value".repeat(8192);
         IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class,
                 expression("['" + large + "', 'x', '', 'tail']"));
-        assertBytes(large, array.entries().getFirst().value());
-        assertBytes("x", array.entries().get(1).value());
-        assertBytes("", array.entries().get(2).value());
-        assertBytes("tail", array.entries().get(3).value());
-        ByteString bytes = assertInstanceOf(IrStringLiteral.class, array.entries().getFirst().value()).value();
+        List<IrValueArrayEntry> entries = array.entries().stream()
+                .map(entry -> assertInstanceOf(IrValueArrayEntry.class, entry)).toList();
+        assertBytes(large, entries.getFirst().value());
+        assertBytes("x", entries.get(1).value());
+        assertBytes("", entries.get(2).value());
+        assertBytes("tail", entries.get(3).value());
+        ByteString bytes = assertInstanceOf(IrStringLiteral.class, entries.getFirst().value()).value();
         byte[] exported = bytes.toByteArray();
         exported[0] = 0;
-        assertBytes(large, array.entries().getFirst().value());
-        assertBytes("x", array.entries().get(1).value());
+        assertBytes(large, entries.getFirst().value());
+        assertBytes("x", entries.get(1).value());
     }
 
     // 并行的公开转换调用拥有独立缓冲区，产物按各自源码保留字节，不共享全局可写状态。
@@ -327,11 +329,13 @@ class StringConversionTest {
     void convertsMagicConstantsInsideExistingExpressionContainers() {
         IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, expression("[__LINE__, __FILE__ => __CLASS__]"));
         assertEquals(MagicConstantKind.LINE,
-                assertInstanceOf(IrMagicConstant.class, array.entries().getFirst().value()).kind());
+                assertInstanceOf(IrMagicConstant.class,
+                        assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value()).kind());
         assertEquals(MagicConstantKind.FILE,
                 assertInstanceOf(IrMagicConstant.class, array.entries().get(1).key()).kind());
         assertEquals(MagicConstantKind.CLASS,
-                assertInstanceOf(IrMagicConstant.class, array.entries().get(1).value()).kind());
+                assertInstanceOf(IrMagicConstant.class,
+                        assertInstanceOf(IrValueArrayEntry.class, array.entries().get(1)).value()).kind());
         IrClosure closure = assertInstanceOf(IrClosure.class,
                 expression("function($value = __NAMESPACE__) { yield __METHOD__ => __FUNCTION__; }"));
         assertEquals(MagicConstantKind.NAMESPACE,

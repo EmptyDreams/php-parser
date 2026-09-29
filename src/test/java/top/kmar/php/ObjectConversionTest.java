@@ -33,7 +33,7 @@ class ObjectConversionTest {
         assertInteger(assignment.value(), 2);
         IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, value.arguments().get(2).expression());
         assertEquals(1, array.entries().size());
-        assertInteger(array.entries().getFirst().value(), 3);
+        assertInteger(assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value(), 3);
     }
 
     // 类引用保留原始限定形式；带前缀的 self/parent 仍是普通名称，不提前解析。

@@ -5,13 +5,20 @@ import top.kmar.php.model.SourceInfo;
 
 import java.util.Objects;
 
-/** 按值 foreach；keyTarget 为 null 表示省略键目标，本轮不表示引用或解构目标。 */
-public record IrForeach(IrExpression iterable, @Nullable IrAssignmentTarget keyTarget,
-                        IrAssignmentTarget valueTarget, IrBlock body, SourceInfo source) implements IrStatement {
+/** foreach；键只能是单个目标，解构仅用于按值迭代，可写来源仅用于引用迭代。 */
+public record IrForeach(IrForeachIterable iterable, @Nullable IrAssignmentTarget keyTarget,
+                        IrBindingTarget valueTarget, boolean byReference,
+                        IrBlock body, SourceInfo source) implements IrStatement {
     public IrForeach {
         Objects.requireNonNull(iterable, "iterable");
         Objects.requireNonNull(valueTarget, "valueTarget");
         Objects.requireNonNull(body, "body");
         Objects.requireNonNull(source, "source");
+        if (byReference && !(valueTarget instanceof IrAssignmentTarget)) {
+            throw new IllegalArgumentException("引用 foreach 的值必须是单个写目标");
+        }
+        if (!byReference && iterable instanceof IrWritableIterable) {
+            throw new IllegalArgumentException("按值 foreach 不能使用可写来源");
+        }
     }
 }

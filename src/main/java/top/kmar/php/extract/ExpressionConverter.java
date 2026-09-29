@@ -47,6 +47,14 @@ final class ExpressionConverter {
                     assignmentTarget(context.required(node.getTarget(), node, path + ".target"), path + ".target"),
                     convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
                     context.source(node));
+            case NodeExprWithoutVariable.AssignRef ignored -> new IrReferenceAssignment(
+                    assignmentTarget(context.required(node.getTarget(), node, path + ".target"), path + ".target"),
+                    variableWriteBase(context.required(node.getRef(), node, path + ".ref"), path + ".ref", true),
+                    context.source(node));
+            case NodeExprWithoutVariable.ListAssign ignored -> destructuringAssignment(node, path,
+                    DestructuringConverter.Style.LIST);
+            case NodeExprWithoutVariable.ShortListAssign ignored -> destructuringAssignment(node, path,
+                    DestructuringConverter.Style.SHORT_ARRAY);
             case NodeExprWithoutVariable.AssignOp ignored -> compoundAssignment(node, path);
             case NodeExprWithoutVariable.PreIncDec ignored -> update(node, path, true);
             case NodeExprWithoutVariable.PostIncDec ignored -> update(node, path, false);
@@ -83,6 +91,15 @@ final class ExpressionConverter {
             case NodeExprWithoutVariable.YieldFrom ignored -> yieldExpression(node, path);
             default -> signedUnary(node, path);
         };
+    }
+
+    private IrDestructuringAssignment destructuringAssignment(NodeExprWithoutVariable node, String path,
+                                                              DestructuringConverter.Style style) {
+        return new IrDestructuringAssignment(
+                new DestructuringConverter(context, this).convert(
+                        context.required(node.getItems(), node, path + ".items"), style, path + ".items"),
+                convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
+                context.source(node));
     }
 
     private IrExpression yieldExpression(NodeExprWithoutVariable node, String path) {
@@ -351,14 +368,21 @@ final class ExpressionConverter {
 
     private IrArrayEntry arrayEntry(NodeArrayPair node, String path) {
         return switch (node) {
-            case NodeArrayPair.Value ignored -> new IrArrayEntry(null,
+            case NodeArrayPair.Value ignored -> new IrValueArrayEntry(null,
                     convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
                     context.source(node));
-            case NodeArrayPair.KeyValue ignored -> new IrArrayEntry(
+            case NodeArrayPair.KeyValue ignored -> new IrValueArrayEntry(
                     convert(context.required(node.getKey(), node, path + ".key"), path + ".key"),
                     convert(context.required(node.getValue(), node, path + ".value"), path + ".value"),
                     context.source(node));
-            default -> throw context.error(node, path, "暂不支持引用数组条目、解构或无法识别的数组条目");
+            case NodeArrayPair.RefValue ignored -> new IrReferenceArrayEntry(null,
+                    assignmentTarget(context.required(node.getRef(), node, path + ".ref"), path + ".ref"),
+                    context.source(node));
+            case NodeArrayPair.KeyRefValue ignored -> new IrReferenceArrayEntry(
+                    convert(context.required(node.getKey(), node, path + ".key"), path + ".key"),
+                    assignmentTarget(context.required(node.getRef(), node, path + ".ref"), path + ".ref"),
+                    context.source(node));
+            default -> throw context.error(node, path, "数组构造不支持解构条目或无法识别的数组条目");
         };
     }
 
@@ -451,6 +475,13 @@ final class ExpressionConverter {
     /** 普通赋值、复合赋值、更新及 foreach 共用；调用结果只能作访问基底，不能独立赋值。 */
     IrAssignmentTarget assignmentTarget(NodeVariable node, String path) {
         return target(node, path, true);
+    }
+
+    /** 已分类为可写来源的 foreach 表达式；允许括号，但不把任意表达式降级成目标。 */
+    IrAssignmentTarget assignmentTarget(NodeExpr node, String path) {
+        IrWriteBase base = expressionWriteBase(node, path, true);
+        if (base instanceof IrAssignmentTarget target) return target;
+        throw context.error(node, path, "调用结果不能独立作为可写目标");
     }
 
     /** 删除沿目标链禁止追加，但不限制下标、实参中独立表达式的写操作。 */

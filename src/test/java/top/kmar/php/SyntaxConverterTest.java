@@ -420,7 +420,7 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
-                "$a =& $b",
+                "$a =& (new class {})->field",
                 "function () { (new class {}); }", "(new class {})", "yield (new class {})")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
             var error = assertThrows(SyntaxConversionException.class,

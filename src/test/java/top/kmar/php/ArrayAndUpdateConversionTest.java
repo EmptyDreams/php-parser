@@ -27,14 +27,16 @@ class ArrayAndUpdateConversionTest {
             IrArrayLiteral array = array(code);
             assertEquals(1, array.entries().size(), code);
             assertNull(array.entries().getFirst().key());
-            assertInteger(1, array.entries().getFirst().value());
+            assertInteger(1, assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value());
         }
         IrArrayLiteral nested = array("array([1,], array(),)");
         assertEquals(2, nested.entries().size());
-        IrArrayLiteral first = assertInstanceOf(IrArrayLiteral.class, nested.entries().getFirst().value());
+        IrArrayLiteral first = assertInstanceOf(IrArrayLiteral.class,
+                assertInstanceOf(IrValueArrayEntry.class, nested.entries().getFirst()).value());
         assertEquals(1, first.entries().size());
-        assertInteger(1, first.entries().getFirst().value());
-        assertTrue(assertInstanceOf(IrArrayLiteral.class, nested.entries().get(1).value()).entries().isEmpty());
+        assertInteger(1, assertInstanceOf(IrValueArrayEntry.class, first.entries().getFirst()).value());
+        assertTrue(assertInstanceOf(IrArrayLiteral.class,
+                assertInstanceOf(IrValueArrayEntry.class, nested.entries().get(1)).value()).entries().isEmpty());
     }
 
     // 保留插入顺序、重复键、显式 null 键与缺省键，不预先分配索引或转换键的类型。
@@ -46,7 +48,9 @@ class ArrayAndUpdateConversionTest {
             List<IrArrayEntry> entries = array(code).entries();
             assertEquals(7, entries.size());
             List<String> names = List.of("first", "second", "third", "fourth", "fifth", "sixth", "seventh");
-            for (int i = 0; i < entries.size(); i++) assertCall(names.get(i), entries.get(i).value());
+            for (int i = 0; i < entries.size(); i++) {
+                assertCall(names.get(i), assertInstanceOf(IrValueArrayEntry.class, entries.get(i)).value());
+            }
             assertNull(entries.getFirst().key());
             assertInteger(2, entries.get(1).key());
             assertInteger(2, entries.get(2).key());
@@ -63,12 +67,13 @@ class ArrayAndUpdateConversionTest {
         IrArrayLiteral outer = array("[key() => [value(),], after()]");
         assertEquals(2, outer.entries().size());
         assertCall("key", outer.entries().getFirst().key());
-        IrArrayLiteral inner = assertInstanceOf(IrArrayLiteral.class, outer.entries().getFirst().value());
+        IrArrayLiteral inner = assertInstanceOf(IrArrayLiteral.class,
+                assertInstanceOf(IrValueArrayEntry.class, outer.entries().getFirst()).value());
         assertEquals(1, inner.entries().size());
         assertNull(inner.entries().getFirst().key());
-        assertCall("value", inner.entries().getFirst().value());
+        assertCall("value", assertInstanceOf(IrValueArrayEntry.class, inner.entries().getFirst()).value());
         assertNull(outer.entries().get(1).key());
-        assertCall("after", outer.entries().get(1).value());
+        assertCall("after", assertInstanceOf(IrValueArrayEntry.class, outer.entries().get(1)).value());
     }
 
     // 文法保留的首部、中间或连续空槽不是普通数组元素，不能在转换时悄悄删除。
@@ -80,13 +85,57 @@ class ArrayAndUpdateConversionTest {
         }
     }
 
-    // 引用条目和解构仍在本次子集之外，不能当作普通数组值或普通赋值处理。
+    // 普通数组构造中的 list 不是值表达式，不能因支持解构而误当作数组元素。
     @Test
-    void rejectsReferenceEntriesAndDestructuring() {
-        for (String code : List.of("[&$a]", "['k' => &$a]", "array(&$a)", "array('k' => &$a)",
-                "[list($a)]", "['k' => list($a)]", "[$a, $b] = $items", "list($a, $b) = $items",
-                "$a[0] =& $b", "$a =& $b[0]")) {
+    void rejectsDestructuringInsideOrdinaryArrayValues() {
+        for (String code : List.of("[list($a)]", "['k' => list($a)]",
+                "array(list($a))", "array('k' => list($a))")) {
             assertRejected(code);
+        }
+    }
+
+    // 原先拒绝的引用条目现在明确保存写目标，不能伪装成普通数组值。
+    @Test
+    void convertsReferenceArrayEntriesWithoutReadingTheirTargets() {
+        for (String code : List.of("[&$a]", "['k' => &$a]", "array(&$a)", "array('k' => &$a)")) {
+            IrArrayLiteral array = array(code);
+            assertEquals(1, array.entries().size());
+            IrReferenceArrayEntry entry = assertInstanceOf(IrReferenceArrayEntry.class, array.entries().getFirst());
+            assertVariableTarget("a", entry.target());
+            if (code.contains("=>")) assertString("k", entry.key());
+            else assertNull(entry.key());
+        }
+    }
+
+    // 引用赋值的来源与目标分别保留可写链，不降级成普通读取赋值。
+    @Test
+    void distinguishesReferenceAssignmentSourcesFromReadExpressions() {
+        IrReferenceAssignment indexedTarget = assertInstanceOf(IrReferenceAssignment.class,
+                expression("$a[0] =& $b"));
+        IrIndexTarget target = assertInstanceOf(IrIndexTarget.class, indexedTarget.target());
+        assertVariableTarget("a", target.base());
+        assertInteger(0, target.index());
+        assertVariableTarget("b", indexedTarget.reference());
+
+        IrReferenceAssignment indexedSource = assertInstanceOf(IrReferenceAssignment.class,
+                expression("$a =& $b[0]"));
+        assertVariableTarget("a", indexedSource.target());
+        IrIndexTarget reference = assertInstanceOf(IrIndexTarget.class, indexedSource.reference());
+        assertVariableTarget("b", reference.base());
+        assertInteger(0, reference.index());
+    }
+
+    // 长短解构赋值都保留独立模式及唯一右值，不与普通数组构造混淆。
+    @Test
+    void distinguishesDestructuringAssignmentsFromArrayValues() {
+        for (String code : List.of("[$a, $b] = $items", "list($a, $b) = $items")) {
+            IrDestructuringAssignment assignment = assertInstanceOf(IrDestructuringAssignment.class, expression(code));
+            assertVariable("items", assignment.value());
+            assertEquals(2, assignment.pattern().slots().size());
+            assertVariableTarget("a", assertInstanceOf(IrVariableTarget.class,
+                    assignment.pattern().slots().getFirst().target()));
+            assertVariableTarget("b", assertInstanceOf(IrVariableTarget.class,
+                    assignment.pattern().slots().get(1).target()));
         }
     }
 
@@ -101,7 +150,7 @@ class ArrayAndUpdateConversionTest {
         assertInteger(1, index("items()[1]").index());
         IrArrayLiteral literal = assertInstanceOf(IrArrayLiteral.class, index("[42][0]").base());
         assertEquals(1, literal.entries().size());
-        assertInteger(42, literal.entries().getFirst().value());
+        assertInteger(42, assertInstanceOf(IrValueArrayEntry.class, literal.entries().getFirst()).value());
         assertInstanceOf(IrArrayLiteral.class, index("array(42)[0]").base());
 
         assertString("text", index("'text'[1]").base());

@@ -220,7 +220,7 @@ class SyntaxConverterContractTest {
         assertThrows(UnsupportedOperationException.class, conditional.branches()::clear);
 
         var entries = new ArrayList<IrArrayEntry>();
-        entries.add(new IrArrayEntry(null, new IrIntegerLiteral(2, source), source));
+        entries.add(new IrValueArrayEntry(null, new IrIntegerLiteral(2, source), source));
         var array = new IrArrayLiteral(entries, source);
         entries.clear();
         assertEquals(1, array.entries().size());
@@ -268,7 +268,8 @@ class SyntaxConverterContractTest {
         IrArrayLiteral defaults = assertInstanceOf(IrArrayLiteral.class,
                 SyntaxConverter.convertExpression(function.signature().parameters().getFirst().defaultValue()));
         assertEquals(List.of(1L, 2L, 3L), defaults.entries().stream()
-                .map(entry -> assertInstanceOf(IrIntegerLiteral.class, entry.value()).value()).toList());
+                .map(entry -> assertInstanceOf(IrIntegerLiteral.class,
+                        assertInstanceOf(IrValueArrayEntry.class, entry).value()).value()).toList());
 
         assertEquals(6, body.statements().size());
         IrAssignment initialization = assertInstanceOf(IrAssignment.class,

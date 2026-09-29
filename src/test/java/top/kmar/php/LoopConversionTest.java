@@ -86,14 +86,18 @@ class LoopConversionTest {
     @Test
     void convertsForeachVariableTargetsAndBothBodyForms() {
         IrForeach valueOnly = assertInstanceOf(IrForeach.class, only("foreach (items() as $value) echo 1;"));
-        IrCall items = assertInstanceOf(IrCall.class, valueOnly.iterable());
+        IrCall items = assertInstanceOf(IrCall.class,
+                assertInstanceOf(IrExpressionIterable.class, valueOnly.iterable()).expression());
         assertEquals("items", assertInstanceOf(IrNamedCallTarget.class, items.target()).name().spelling());
         assertNull(valueOnly.keyTarget());
+        assertFalse(valueOnly.byReference());
         assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, valueOnly.valueTarget()).name()));
         assertEquals(1, valueOnly.body().statements().size());
         for (String suffix : List.of("{ echo 1; return 2; }", ": echo 1; return 2; endforeach;")) {
             IrForeach loop = assertInstanceOf(IrForeach.class, only("foreach ($items as $key => $value) " + suffix));
-            assertEquals("items", fixedName(assertInstanceOf(IrVariable.class, loop.iterable()).name()));
+            assertEquals("items", fixedName(assertInstanceOf(IrVariable.class,
+                    assertInstanceOf(IrExpressionIterable.class, loop.iterable()).expression()).name()));
+            assertFalse(loop.byReference());
             assertEquals("key", fixedName(assertInstanceOf(IrVariableTarget.class, loop.keyTarget()).name()));
             assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, loop.valueTarget()).name()));
             assertEchoAndReturn(loop.body());
@@ -146,16 +150,49 @@ class LoopConversionTest {
         assertNull(assertInstanceOf(IrBreak.class, inner.body().statements().get(1)).levels());
     }
 
-    // 文法接受的引用、解构与非可写目标仍必须明确失败，不能默默丢掉目标修饰。
+    // 引用键、模式键和裸调用目标仍必须明确失败，不能因放宽值目标而丢掉键约束。
     @Test
     void rejectsUnsupportedForeachTargets() {
-        for (String binding : List.of("&$value", "list($value)", "[$value]", "&$key => $value",
-                "list($key) => $value", "$key => &$value", "$key => [$value]", "f()")) {
+        for (String binding : List.of("&$key => $value", "list($key) => $value",
+                "[$key] => $value", "f()")) {
             SyntaxBody syntax = syntaxBody("foreach ($items as " + binding + ") {}");
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), binding);
             assertTrue(error.fieldPath().contains(".var") || error.fieldPath().contains(".key")
                     || error.fieldPath().contains(".valueVar"), binding);
             assertFalse(error.reason().isBlank());
+        }
+    }
+
+    // 引用值目标保留引用标记；变量来源以可写迭代包装保存，键仍是普通写目标。
+    @Test
+    void convertsReferenceForeachValuesWithoutChangingKeyBindings() {
+        for (String binding : List.of("&$value", "$key => &$value")) {
+            IrForeach loop = assertInstanceOf(IrForeach.class, only("foreach ($items as " + binding + ") {}"));
+            assertTrue(loop.byReference());
+            IrWritableIterable iterable = assertInstanceOf(IrWritableIterable.class, loop.iterable());
+            assertEquals("items", fixedName(assertInstanceOf(IrVariableTarget.class, iterable.target()).name()));
+            assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, loop.valueTarget()).name()));
+            if (binding.contains("=>")) {
+                assertEquals("key", fixedName(assertInstanceOf(IrVariableTarget.class, loop.keyTarget()).name()));
+            } else assertNull(loop.keyTarget());
+        }
+    }
+
+    // foreach 长短解构仅替换值绑定，迭代对象仍按值读取，外层键不参与模式。
+    @Test
+    void convertsDestructuringForeachValuesWithoutChangingIterationMode() {
+        for (String binding : List.of("list($value)", "[$value]", "$key => [$value]")) {
+            IrForeach loop = assertInstanceOf(IrForeach.class, only("foreach ($items as " + binding + ") {}"));
+            assertFalse(loop.byReference());
+            assertEquals("items", fixedName(assertInstanceOf(IrVariable.class,
+                    assertInstanceOf(IrExpressionIterable.class, loop.iterable()).expression()).name()));
+            IrDestructuringPattern pattern = assertInstanceOf(IrDestructuringPattern.class, loop.valueTarget());
+            assertEquals(1, pattern.slots().size());
+            assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class,
+                    pattern.slots().getFirst().target()).name()));
+            if (binding.contains("=>")) {
+                assertEquals("key", fixedName(assertInstanceOf(IrVariableTarget.class, loop.keyTarget()).name()));
+            } else assertNull(loop.keyTarget());
         }
     }
 

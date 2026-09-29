@@ -195,8 +195,8 @@ class DynamicConversionTest {
             IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class,
                     callable(assertInstanceOf(IrCall.class, expression(code))));
             assertEquals(2, array.entries().size());
-            assertVariable(array.entries().getFirst().value(), "obj");
-            assertString(array.entries().get(1).value(), "run");
+            assertVariable(assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value(), "obj");
+            assertString(assertInstanceOf(IrValueArrayEntry.class, array.entries().get(1)).value(), "run");
         }
         assertInteger(callable(assertInstanceOf(IrCall.class, expression("(1)()"))), 1);
     }

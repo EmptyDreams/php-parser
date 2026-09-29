@@ -73,19 +73,8 @@ final class StatementConverter {
                     expressionList(stmt.getForStep(), stmt, path + ".forStep"),
                     forBody(context.required(stmt.getForBody(), stmt, path + ".forBody"), path + ".forBody"),
                     context.source(stmt));
-            case NodeStatement.Foreach stmt -> new IrForeach(
-                    expressions.convert(context.required(stmt.getIterable(), stmt, path + ".iterable"),
-                            path + ".iterable"),
-                    null, foreachTarget(context.required(stmt.getVar(), stmt, path + ".var"), path + ".var"),
-                    foreachBody(context.required(stmt.getForeachBody(), stmt, path + ".foreachBody"),
-                            path + ".foreachBody"), context.source(stmt));
-            case NodeStatement.ForeachKV stmt -> new IrForeach(
-                    expressions.convert(context.required(stmt.getIterable(), stmt, path + ".iterable"),
-                            path + ".iterable"),
-                    foreachTarget(context.required(stmt.getKey(), stmt, path + ".key"), path + ".key"),
-                    foreachTarget(context.required(stmt.getValueVar(), stmt, path + ".valueVar"), path + ".valueVar"),
-                    foreachBody(context.required(stmt.getForeachBody(), stmt, path + ".foreachBody"),
-                            path + ".foreachBody"), context.source(stmt));
+            case NodeStatement.Foreach stmt -> foreach(stmt, path);
+            case NodeStatement.ForeachKV stmt -> foreach(stmt, path);
             case NodeStatement.Break stmt -> new IrBreak(stmt.getLevels() == null ? null
                     : expressions.convert(stmt.getLevels(), path + ".levels"), context.source(stmt));
             case NodeStatement.Continue stmt -> new IrContinue(stmt.getLevels() == null ? null
@@ -271,11 +260,43 @@ final class StatementConverter {
         };
     }
 
-    private IrAssignmentTarget foreachTarget(NodeForeachVariable node, String path) {
-        if (!(node instanceof NodeForeachVariable.Var)) {
-            throw context.error(node, path, "foreach 目标暂不支持引用或解构");
+    private IrForeach foreach(NodeStatement node, String path) {
+        IrAssignmentTarget key = null;
+        boolean hasKey = node instanceof NodeStatement.ForeachKV;
+        if (hasKey) {
+            var keyNode = context.required(node.getKey(), node, path + ".key");
+            if (!(keyNode instanceof NodeForeachVariable.Var)) {
+                throw context.error(keyNode, path + ".key", "foreach 键必须是非引用的单个可写目标");
+            }
+            key = expressions.assignmentTarget(context.required(keyNode.getV(), keyNode, path + ".key.v"),
+                    path + ".key.v");
         }
-        return expressions.assignmentTarget(context.required(node.getV(), node, path + ".v"), path + ".v");
+        String valuePath = path + (hasKey ? ".valueVar" : ".var");
+        var valueNode = context.required(hasKey ? node.getValueVar() : node.getVar(), node, valuePath);
+        boolean byReference = valueNode instanceof NodeForeachVariable.Ref;
+        if (byReference && !context.text(valueNode.getAmp(), valueNode, valuePath + ".amp").equals("&")) {
+            throw context.error(valueNode, valuePath + ".amp", "foreach 引用标记与结构不一致");
+        }
+        IrBindingTarget value = switch (valueNode) {
+            case NodeForeachVariable.Var ignored ->
+                    expressions.assignmentTarget(context.required(valueNode.getV(), valueNode, valuePath + ".v"),
+                            valuePath + ".v");
+            case NodeForeachVariable.Ref ignored ->
+                    expressions.assignmentTarget(context.required(valueNode.getV(), valueNode, valuePath + ".v"),
+                            valuePath + ".v");
+            case NodeForeachVariable.List ignored -> new DestructuringConverter(context, expressions).convert(
+                    context.required(valueNode.getItems(), valueNode, valuePath + ".items"),
+                    DestructuringConverter.Style.LIST, valuePath + ".items");
+            case NodeForeachVariable.ShortList ignored -> new DestructuringConverter(context, expressions).convert(
+                    context.required(valueNode.getItems(), valueNode, valuePath + ".items"),
+                    DestructuringConverter.Style.SHORT_ARRAY, valuePath + ".items");
+            default -> throw context.error(valueNode, valuePath, "无法识别的 foreach 值目标");
+        };
+        return new IrForeach(new ForeachIterableConverter(context, expressions).convert(
+                context.required(node.getIterable(), node, path + ".iterable"), byReference, path + ".iterable"),
+                key, value, byReference,
+                foreachBody(context.required(node.getForeachBody(), node, path + ".foreachBody"),
+                        path + ".foreachBody"), context.source(node));
     }
 
     private IrIf standardIf(NodeIfStmt node, String path) {

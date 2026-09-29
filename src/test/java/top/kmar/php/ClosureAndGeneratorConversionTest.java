@@ -92,7 +92,7 @@ class ClosureAndGeneratorConversionTest {
         IrArrayLiteral items = assertInstanceOf(IrArrayLiteral.class, parameters.get(5).defaultValue());
         assertEquals(1, items.entries().size());
         assertInteger(items.entries().getFirst().key(), 2);
-        assertString(items.entries().getFirst().value(), "two");
+        assertString(assertInstanceOf(IrValueArrayEntry.class, items.entries().getFirst()).value(), "two");
         IrBinary sum = assertInstanceOf(IrBinary.class, parameters.get(6).defaultValue());
         assertEquals(BinaryOperator.ADD, sum.operator());
         assertInteger(sum.left(), 1);
@@ -120,8 +120,10 @@ class ClosureAndGeneratorConversionTest {
         assertInstanceOf(IrClosure.class, assignment.value());
         IrArrayLiteral array = assertInstanceOf(IrArrayLiteral.class, expression("[function() {}, static function() {}]"));
         assertEquals(2, array.entries().size());
-        assertFalse(assertInstanceOf(IrClosure.class, array.entries().getFirst().value()).isStatic());
-        assertTrue(assertInstanceOf(IrClosure.class, array.entries().get(1).value()).isStatic());
+        assertFalse(assertInstanceOf(IrClosure.class,
+                assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value()).isStatic());
+        assertTrue(assertInstanceOf(IrClosure.class,
+                assertInstanceOf(IrValueArrayEntry.class, array.entries().get(1)).value()).isStatic());
         IrCall consumer = assertCall(expression("consume(function($x) { return $x; })"), "consume", 1);
         assertEquals("x", assertInstanceOf(IrClosure.class, consumer.arguments().getFirst().expression())
                 .parameters().getFirst().name());
@@ -248,7 +250,8 @@ class ClosureAndGeneratorConversionTest {
                 + "finally { yield from cleanup(); } } return 7; }");
         assertEquals(2, closure.body().statements().size());
         IrForeach loop = assertInstanceOf(IrForeach.class, closure.body().statements().getFirst());
-        assertVariable(loop.iterable(), "items");
+        assertVariable(assertInstanceOf(IrExpressionIterable.class, loop.iterable()).expression(), "items");
+        assertFalse(loop.byReference());
         assertEquals(1, loop.body().statements().size());
         IrTry attempt = assertInstanceOf(IrTry.class, loop.body().statements().getFirst());
         IrYield pair = assertInstanceOf(IrYield.class, statementExpression(attempt.body(), 0));
@@ -306,13 +309,12 @@ class ClosureAndGeneratorConversionTest {
         assertInstanceOf(IrYieldFrom.class, returned.value());
     }
 
-    // 操作数始终沿用读取规则；内部独立赋值可以追加，但裸追加读取和引用赋值仍拒绝。
+    // 操作数始终沿用读取规则；内部独立赋值可以追加，引用捕获也不放宽裸追加读取。
     @Test
     void preservesReadContextAndIndependentAssignmentBoundaries() {
         for (String code : List.of("yield $items[]", "yield $items[] => 1", "yield 1 => $items[]",
                 "yield from $items[]", "function($value = $items[]) {}", "function &() { return $items[]; }",
-                "function &() { yield $items[]; }", "function &() { yield from $items[]; }",
-                "function() use (&$items) { $copy =& $items; }")) {
+                "function &() { yield $items[]; }", "function &() { yield from $items[]; }")) {
             assertRejected(code);
         }
         IrYield value = assertInstanceOf(IrYield.class, expression("yield ($items[] = next())"));
@@ -321,6 +323,12 @@ class ClosureAndGeneratorConversionTest {
         assertAppendAssignment(delegation.expression(), "items", "next");
         IrClosure closure = closure("function() use (&$items) { $items[] = next(); }");
         assertAppendAssignment(statementExpression(closure.body(), 0), "items", "next");
+        IrClosure referenceClosure = closure("function() use (&$items) { $copy =& $items; }");
+        IrReferenceAssignment reference = assertInstanceOf(IrReferenceAssignment.class,
+                statementExpression(referenceClosure.body(), 0));
+        assertFixed(assertInstanceOf(IrVariableTarget.class, reference.target()).name(), "copy");
+        assertFixed(assertInstanceOf(IrVariableTarget.class, reference.reference()).name(), "items");
+        assertTrue(referenceClosure.captures().getFirst().byReference());
     }
 
     // 新增外壳不吞掉未支持的子树；匿名类、声明及局部作用域结构继续明确失败。
