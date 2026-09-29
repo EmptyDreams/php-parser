@@ -418,11 +418,10 @@ class SyntaxConverterTest {
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
-                "$a->p", "C::$p", "$$a",
-                "$callback()", "$a->run()", "C::run()", "f(...$args)",
+                "$$a", "$callback()", "f(...$args)",
                 "$a =& $b", "(int) $a", "@f()",
-                "function () {}", "\"$a\"", "__LINE__", "C::VALUE",
-                "new C", "clone $a", "print $a", "isset($a)", "yield 1",
+                "function () {}", "\"$a\"", "__LINE__",
+                "print $a", "isset($a)", "yield 1",
                 "<<<EOT\nplain text\nEOT\n", "<<<'NOW'\nno $interpolation\nNOW\n",
                 "<<<EMPTY\nEMPTY\n")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
@@ -436,7 +435,7 @@ class SyntaxConverterTest {
     // 文法中的 variable 也包括调用，但这些表达式不是本阶段允许的可写赋值目标。
     @Test
     void rejectsUnsupportedAssignmentRootsEvenWhenGrammarAcceptsThem() {
-        for (String code : List.of("f() = 1", "$a->p = 1", "C::$p = 1", "$$a = 1")) {
+        for (String code : List.of("f() = 1", "$$a = 1")) {
             SyntaxExpression syntax = syntaxExpression(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertExpression(syntax), code);
         }

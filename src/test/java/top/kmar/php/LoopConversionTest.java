@@ -148,7 +148,7 @@ class LoopConversionTest {
     @Test
     void rejectsUnsupportedForeachTargets() {
         for (String binding : List.of("&$value", "list($value)", "[$value]", "&$key => $value",
-                "list($key) => $value", "$key => &$value", "$key => [$value]", "f()", "$obj->value")) {
+                "list($key) => $value", "$key => &$value", "$key => [$value]", "f()")) {
             SyntaxBody syntax = syntaxBody("foreach ($items as " + binding + ") {}");
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), binding);
             assertTrue(error.fieldPath().contains(".var") || error.fieldPath().contains(".key")

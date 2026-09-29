@@ -8,6 +8,7 @@ import top.kmar.php.model.NameForm;
 import top.kmar.php.model.NameReference;
 
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
@@ -47,6 +48,12 @@ final class ExpressionConverter {
             case NodeExprWithoutVariable.AssignOp ignored -> compoundAssignment(node, path);
             case NodeExprWithoutVariable.PreIncDec ignored -> update(node, path, true);
             case NodeExprWithoutVariable.PostIncDec ignored -> update(node, path, false);
+            case NodeExprWithoutVariable.New ignored -> newExpression(
+                    context.required(node.getNewExpr(), node, path + ".newExpr"), path + ".newExpr");
+            case NodeExprWithoutVariable.Clone ignored -> new IrClone(
+                    convert(context.required(node.getExpr(), node, path + ".expr"), path + ".expr"),
+                    context.source(node));
+            case NodeExprWithoutVariable.Instanceof ignored -> instanceOf(node, path);
             case NodeExprWithoutVariable.Binary ignored -> binary(node, path);
             case NodeExprWithoutVariable.Unary ignored -> unary(node, path);
             case NodeExprWithoutVariable.Conditional ignored -> new IrConditional(
@@ -235,8 +242,16 @@ final class ExpressionConverter {
     }
 
     private IrExpression constant(NodeConstant node, String path) {
+        if (node instanceof NodeConstant.ClassConstant) {
+            IrClassReference clazz = classReference(
+                    context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+            String member = context.identifier(context.required(node.getMember(), node, path + ".member"),
+                    path + ".member");
+            return member.equalsIgnoreCase("class") ? new IrClassName(clazz, context.source(node))
+                    : new IrClassConstantReference(clazz, member, context.source(node));
+        }
         if (!(node instanceof NodeConstant.NamedConstant)) {
-            throw context.error(node, path, "暂不支持类常量或动态常量引用");
+            throw context.error(node, path, "暂不支持动态类常量引用或无法识别的常量结构");
         }
         NameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
         String spelling = name.spelling();
@@ -257,27 +272,42 @@ final class ExpressionConverter {
     }
 
     private IrExpression variable(NodeVariable node, String path) {
-        if (!(node instanceof NodeVariable.CallableVariable)) {
-            throw context.error(node, path, "暂不支持属性或静态成员访问");
-        }
-        NodeCallableVariable callable = context.required(node.getCv(), node, path + ".cv");
-        return switch (callable) {
+        return switch (node) {
+            case NodeVariable.CallableVariable ignored -> callableVariable(
+                    context.required(node.getCv(), node, path + ".cv"), path + ".cv");
+            case NodeVariable.PropertyAccess ignored -> new IrPropertyAccess(
+                    dereferencable(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    propertyName(context.required(node.getProp(), node, path + ".prop"), path + ".prop"),
+                    context.source(node));
+            case NodeVariable.StaticMember ignored -> staticProperty(
+                    context.required(node.getSm(), node, path + ".sm"), path + ".sm");
+            default -> throw context.error(node, path, "无法识别的变量结构");
+        };
+    }
+
+    private IrExpression callableVariable(NodeCallableVariable node, String path) {
+        return switch (node) {
             case NodeCallableVariable.SimpleVar ignored -> {
-                NodeSimpleVariable simple = context.required(callable.getSv(), callable, path + ".cv.sv");
-                yield new IrVariable(variableName(simple, path + ".cv.sv"), context.source(simple));
+                NodeSimpleVariable simple = context.required(node.getSv(), node, path + ".sv");
+                yield new IrVariable(variableName(simple, path + ".sv"), context.source(simple));
             }
             case NodeCallableVariable.FunctionCall ignored -> call(
-                    context.required(callable.getCall(), callable, path + ".cv.call"), path + ".cv.call");
+                    context.required(node.getCall(), node, path + ".call"), path + ".call");
+            case NodeCallableVariable.MethodCall ignored -> new IrMethodCall(
+                    dereferencable(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    propertyName(context.required(node.getProp(), node, path + ".prop"), path + ".prop"),
+                    arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
+                    context.source(node));
             case NodeCallableVariable.Index ignored -> new IrIndex(
-                    dereferencable(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
-                    readIndex(callable.getOffset(), callable, path + ".cv.offset"), context.source(callable));
+                    dereferencable(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    readIndex(node.getOffset(), node, path + ".offset"), context.source(node));
             case NodeCallableVariable.ConstantIndex ignored -> new IrIndex(
-                    constant(context.required(callable.getC(), callable, path + ".cv.c"), path + ".cv.c"),
-                    readIndex(callable.getOffset(), callable, path + ".cv.offset"), context.source(callable));
+                    constant(context.required(node.getC(), node, path + ".c"), path + ".c"),
+                    readIndex(node.getOffset(), node, path + ".offset"), context.source(node));
             case NodeCallableVariable.CurlyIndex ignored -> new IrIndex(
-                    dereferencable(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
-                    readIndex(callable.getE(), callable, path + ".cv.e"), context.source(callable));
-            default -> throw context.error(callable, path + ".cv", "暂不支持属性、方法调用或无法识别的变量结构");
+                    dereferencable(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    readIndex(node.getE(), node, path + ".e"), context.source(node));
+            default -> throw context.error(node, path, "无法识别的可调用变量结构");
         };
     }
 
@@ -289,7 +319,7 @@ final class ExpressionConverter {
                     context.required(node.getE(), node, path + ".e"), path + ".e");
             case NodeDereferencable.Scalar ignored -> dereferencableScalar(
                     context.required(node.getDs(), node, path + ".ds"), path + ".ds");
-            default -> throw context.error(node, path, "无法识别的下标基础表达式");
+            default -> throw context.error(node, path, "无法识别的访问基底表达式");
         };
     }
 
@@ -298,53 +328,98 @@ final class ExpressionConverter {
         return convert(index, path);
     }
 
-    /** 普通赋值、复合赋值、更新及 foreach 共用的目标转换，目标链始终以简单变量为根。 */
+    /** 普通赋值、复合赋值、更新及 foreach 共用；调用结果只能作访问基底，不能独立赋值。 */
     IrAssignmentTarget assignmentTarget(NodeVariable node, String path) {
-        if (!(node instanceof NodeVariable.CallableVariable)) {
-            throw context.error(node, path, "可写目标仅支持简单变量及其下标链");
-        }
-        NodeCallableVariable callable = context.required(node.getCv(), node, path + ".cv");
-        return switch (callable) {
+        IrWriteBase base = variableWriteBase(node, path);
+        if (base instanceof IrAssignmentTarget target) return target;
+        throw context.error(node, path, "调用结果不能独立作为可写目标");
+    }
+
+    private IrWriteBase variableWriteBase(NodeVariable node, String path) {
+        return switch (node) {
+            case NodeVariable.CallableVariable ignored -> callableWriteBase(
+                    context.required(node.getCv(), node, path + ".cv"), path + ".cv");
+            case NodeVariable.PropertyAccess ignored -> new IrPropertyTarget(
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    propertyName(context.required(node.getProp(), node, path + ".prop"), path + ".prop"),
+                    context.source(node));
+            case NodeVariable.StaticMember ignored -> staticPropertyTarget(
+                    context.required(node.getSm(), node, path + ".sm"), path + ".sm");
+            default -> throw context.error(node, path, "无法识别的可写访问结构");
+        };
+    }
+
+    private IrWriteBase callableWriteBase(NodeCallableVariable node, String path) {
+        return switch (node) {
+            case NodeCallableVariable.FunctionCall ignored -> expressionWriteBase(callableVariable(node, path));
+            case NodeCallableVariable.MethodCall ignored -> expressionWriteBase(callableVariable(node, path));
             case NodeCallableVariable.SimpleVar ignored -> {
-                NodeSimpleVariable simple = context.required(callable.getSv(), callable, path + ".cv.sv");
-                yield new IrVariableTarget(variableName(simple, path + ".cv.sv"), context.source(simple));
+                NodeSimpleVariable simple = context.required(node.getSv(), node, path + ".sv");
+                yield new IrVariableTarget(variableName(simple, path + ".sv"), context.source(simple));
             }
             case NodeCallableVariable.Index ignored -> new IrIndexTarget(
-                    dereferencableTarget(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
-                    callable.getOffset() == null ? null : convert(callable.getOffset(), path + ".cv.offset"),
-                    context.source(callable));
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    node.getOffset() == null ? null : convert(node.getOffset(), path + ".offset"),
+                    context.source(node));
             case NodeCallableVariable.CurlyIndex ignored -> new IrIndexTarget(
-                    dereferencableTarget(context.required(callable.getD(), callable, path + ".cv.d"), path + ".cv.d"),
-                    convert(context.required(callable.getE(), callable, path + ".cv.e"), path + ".cv.e"),
-                    context.source(callable));
-            default -> throw context.error(callable, path + ".cv", "可写目标仅支持简单变量及其下标链");
+                    dereferencableWriteBase(context.required(node.getD(), node, path + ".d"), path + ".d"),
+                    convert(context.required(node.getE(), node, path + ".e"), path + ".e"),
+                    context.source(node));
+            default -> throw context.error(node, path, "暂不支持的写入基底");
         };
     }
 
-    private IrAssignmentTarget dereferencableTarget(NodeDereferencable node, String path) {
+    private IrExpressionWriteBase expressionWriteBase(IrExpression expression) {
+        // 此处只接收已按读取规则转换的调用，其接收者、实参不会继承外层写上下文。
+        return new IrExpressionWriteBase(expression, expression.source());
+    }
+
+    private IrWriteBase dereferencableWriteBase(NodeDereferencable node, String path) {
         return switch (node) {
-            case NodeDereferencable.Var ignored -> assignmentTarget(
+            case NodeDereferencable.Var ignored -> variableWriteBase(
                     context.required(node.getV(), node, path + ".v"), path + ".v");
-            case NodeDereferencable.Paren ignored -> expressionTarget(
+            case NodeDereferencable.Paren ignored -> expressionWriteBase(
                     context.required(node.getE(), node, path + ".e"), path + ".e");
-            default -> throw context.error(node, path, "可写下标链必须以简单变量为根");
+            default -> throw context.error(node, path, "暂不支持的写入基底");
         };
     }
 
-    private IrAssignmentTarget expressionTarget(NodeExpr node, String path) {
+    private IrWriteBase expressionWriteBase(NodeExpr node, String path) {
         return switch (node) {
-            case NodeExpr.VariableExpr ignored -> assignmentTarget(
+            case NodeExpr.VariableExpr ignored -> variableWriteBase(
                     context.required(node.getV(), node, path + ".v"), path + ".v");
             case NodeExpr.ExprWithoutVariable ignored -> {
                 NodeExprWithoutVariable expression = context.required(node.getEv(), node, path + ".ev");
                 if (!(expression instanceof NodeExprWithoutVariable.Paren)) {
-                    throw context.error(expression, path + ".ev", "可写下标链必须以简单变量为根");
+                    throw context.error(expression, path + ".ev", "暂不支持的写入基底");
                 }
-                yield expressionTarget(context.required(expression.getExpr(), expression, path + ".ev.expr"),
+                yield expressionWriteBase(context.required(expression.getExpr(), expression, path + ".ev.expr"),
                         path + ".ev.expr");
             }
-            default -> throw context.error(node, path, "无法识别的可写目标表达式包装");
+            default -> throw context.error(node, path, "无法识别的可写基底表达式包装");
         };
+    }
+
+    private IrStaticPropertyAccess staticProperty(NodeStaticMember node, String path) {
+        requireStaticProperty(node, path);
+        return new IrStaticPropertyAccess(
+                classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                context.source(node));
+    }
+
+    private IrStaticPropertyTarget staticPropertyTarget(NodeStaticMember node, String path) {
+        requireStaticProperty(node, path);
+        return new IrStaticPropertyTarget(
+                classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                variableName(context.required(node.getVar(), node, path + ".var"), path + ".var"),
+                context.source(node));
+    }
+
+    private void requireStaticProperty(NodeStaticMember node, String path) {
+        if (!(node instanceof NodeStaticMember.StaticProperty)) {
+            throw context.error(node, path, "暂不支持动态类名或无法识别的静态属性结构");
+        }
     }
 
     private String variableName(NodeSimpleVariable node, String path) {
@@ -354,27 +429,101 @@ final class ExpressionConverter {
         return context.text(node.getVar(), node, path + ".var");
     }
 
-    private IrCall call(NodeFunctionCall node, String path) {
-        if (!(node instanceof NodeFunctionCall.Call)) {
-            throw context.error(node, path, "暂不支持动态调用或静态方法调用");
+    private String propertyName(NodePropertyName node, String path) {
+        if (!(node instanceof NodePropertyName.Name)) {
+            throw context.error(node, path, "暂不支持动态属性／方法名或无法识别的成员名称");
+        }
+        return context.text(node.getName(), node, path + ".name");
+    }
+
+    private String memberName(NodeMemberName node, String path) {
+        if (!(node instanceof NodeMemberName.IdentifierName)) {
+            throw context.error(node, path, "暂不支持动态静态方法名或无法识别的成员名称");
+        }
+        return context.identifier(context.required(node.getIdent(), node, path + ".ident"), path + ".ident");
+    }
+
+    private IrClassReference classReference(NodeClassNameReference node, String path) {
+        if (!(node instanceof NodeClassNameReference.ClassName)) {
+            throw context.error(node, path, "暂不支持动态类名或无法识别的类引用");
+        }
+        return classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz");
+    }
+
+    private IrClassReference classReference(NodeClassName node, String path) {
+        if (node instanceof NodeClassName.StaticClass) {
+            if (!context.text(node.getKw(), node, path + ".kw").equalsIgnoreCase("static")) {
+                throw context.error(node, path + ".kw", "静态类引用标记与结构不一致");
+            }
+            return new IrSpecialClassReference(SpecialClassKind.STATIC, context.source(node));
+        }
+        if (!(node instanceof NodeClassName.NamedClass)) {
+            throw context.error(node, path, "无法识别的类名称结构");
         }
         NameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
-        NodeArgumentList argumentList = context.required(node.getArgs(), node, path + ".args");
-        if (!(argumentList instanceof NodeArgumentList.Args)) {
-            throw context.error(argumentList, path + ".args", "无法识别的调用参数列表");
+        if (name.form() == NameForm.UNQUALIFIED) {
+            SpecialClassKind kind = switch (name.spelling().toLowerCase(Locale.ROOT)) {
+                case "self" -> SpecialClassKind.SELF;
+                case "parent" -> SpecialClassKind.PARENT;
+                case "static" -> SpecialClassKind.STATIC;
+                default -> null;
+            };
+            if (kind != null) return new IrSpecialClassReference(kind, context.source(node));
         }
-        var list = context.required(argumentList.getArgs(), argumentList, path + ".args.args");
+        return new IrNamedClassReference(name, context.source(node));
+    }
+
+    private IrNew newExpression(NodeNewExpr node, String path) {
+        if (!(node instanceof NodeNewExpr.New)) {
+            throw context.error(node, path, "暂不支持匿名类或无法识别的实例化结构");
+        }
+        return new IrNew(
+                classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                node.getCtorArgs() == null ? List.of() : arguments(node.getCtorArgs(), path + ".ctorArgs"),
+                context.source(node));
+    }
+
+    private IrInstanceOf instanceOf(NodeExprWithoutVariable node, String path) {
+        if (!context.text(node.getOp(), node, path + ".op").equalsIgnoreCase("instanceof")) {
+            throw context.error(node, path + ".op", "instanceof 运算符与结构不一致");
+        }
+        return new IrInstanceOf(
+                convert(context.required(node.getLeft(), node, path + ".left"), path + ".left"),
+                classReference(context.required(node.getClassRef(), node, path + ".classRef"), path + ".classRef"),
+                context.source(node));
+    }
+
+    private IrExpression call(NodeFunctionCall node, String path) {
+        return switch (node) {
+            case NodeFunctionCall.Call ignored -> new IrCall(
+                    context.name(context.required(node.getN(), node, path + ".n"), path + ".n"),
+                    arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
+                    context.source(node));
+            case NodeFunctionCall.StaticCall ignored -> new IrStaticCall(
+                    classReference(context.required(node.getClazz(), node, path + ".clazz"), path + ".clazz"),
+                    memberName(context.required(node.getMember(), node, path + ".member"), path + ".member"),
+                    arguments(context.required(node.getArgs(), node, path + ".args"), path + ".args"),
+                    context.source(node));
+            default -> throw context.error(node, path, "暂不支持动态调用或无法识别的调用结构");
+        };
+    }
+
+    private List<IrExpression> arguments(NodeArgumentList argumentList, String path) {
+        if (!(argumentList instanceof NodeArgumentList.Args)) {
+            throw context.error(argumentList, path, "无法识别的调用参数列表");
+        }
+        var list = context.required(argumentList.getArgs(), argumentList, path + ".args");
         var arguments = new ArrayList<IrExpression>();
-        var values = context.elements(list.getValue(), argumentList, path + ".args.args");
+        var values = context.elements(list.getValue(), argumentList, path + ".args");
         for (int i = 0; i < values.size(); i++) {
             NodeArgument argument = values.get(i);
-            String argumentPath = path + ".args.args[" + i + "]";
+            String argumentPath = path + ".args[" + i + "]";
             if (!(argument instanceof NodeArgument.Arg)) {
                 throw context.error(argument, argumentPath, "暂不支持参数解包或无法识别的实参");
             }
             arguments.add(convert(context.required(argument.getArg(), argument, argumentPath + ".arg"),
                     argumentPath + ".arg"));
         }
-        return new IrCall(name, arguments, context.source(node));
+        return arguments;
     }
 }

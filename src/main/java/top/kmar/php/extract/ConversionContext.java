@@ -4,8 +4,10 @@ import java_cup.runtime.AstNode;
 import java_cup.runtime.symbol.complex.ComplexLocation;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import top.kmar.php.NodeIdentifier;
 import top.kmar.php.NodeName;
 import top.kmar.php.NodeNamespaceName;
+import top.kmar.php.NodeSemiReserved;
 import top.kmar.php.NodeString;
 import top.kmar.php.model.NameForm;
 import top.kmar.php.model.NameReference;
@@ -70,6 +72,24 @@ final class ConversionContext {
                     value.indexOf('\\') < 0 ? NameForm.UNQUALIFIED : NameForm.QUALIFIED, source(node));
             default -> throw error(node, path, "无法识别的名称引用");
         };
+    }
+
+    /** 成员标识符也可以是文法允许的半保留字，保留原拼写。 */
+    String identifier(NodeIdentifier node, String path) {
+        required(node, null, path);
+        if (node instanceof NodeIdentifier.Identifier) {
+            return text(node.getName(), node, path + ".name");
+        }
+        if (node instanceof NodeIdentifier.SemiReservedIdentifier) {
+            var keyword = required(node.getKw(), node, path + ".kw");
+            if (keyword instanceof NodeSemiReserved.Reserved) {
+                var reserved = required(keyword.getKeyword(), keyword, path + ".kw.keyword");
+                return text(reserved.getKw(), reserved, path + ".kw.keyword.kw");
+            }
+            // 若干关键字共享匿名生成变体，不依赖其哈希名称。
+            return text(keyword.getKw(), keyword, path + ".kw.kw");
+        }
+        throw error(node, path, "无法识别的成员标识符结构");
     }
 
     private String namespaceName(NodeNamespaceName node, String path) {

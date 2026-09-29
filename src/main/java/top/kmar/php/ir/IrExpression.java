@@ -6,6 +6,8 @@ import top.kmar.php.model.SourceInfo;
 public sealed interface IrExpression permits IrLiteral, IrIntegerLiteral, IrFloatLiteral,
         IrVariable, IrConstantReference,
         IrAssignment, IrCompoundAssignment, IrUpdate, IrArrayLiteral, IrIndex,
-        IrUnary, IrBinary, IrLogical, IrCoalesce, IrConditional, IrCall {
+        IrUnary, IrBinary, IrLogical, IrCoalesce, IrConditional, IrCall,
+        IrNew, IrClone, IrInstanceOf, IrPropertyAccess, IrStaticPropertyAccess,
+        IrMethodCall, IrStaticCall, IrClassConstantReference, IrClassName {
     SourceInfo source();
 }

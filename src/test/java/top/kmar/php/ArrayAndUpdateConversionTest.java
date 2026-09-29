@@ -210,11 +210,10 @@ class ArrayAndUpdateConversionTest {
         }
     }
 
-    // 所有写操作都限制为简单变量根；调用、常量、字面量、运算结果和对象等不能成为目标根。
+    // 扩展可写访问链后，常量、字面量、运算结果与动态变量仍不能成为目标根。
     @Test
     void rejectsUnsupportedRootsForEveryWriteOperation() {
-        for (String target : List.of("items()[0]", "[1][0]", "ITEMS[0]", "'text'[0]", "($a + $b)[0]",
-                "$object->items[0]", "C::$items[0]", "$$items[0]")) {
+        for (String target : List.of("[1][0]", "ITEMS[0]", "'text'[0]", "($a + $b)[0]", "$$items[0]")) {
             assertRejected(target + " = 1");
             assertRejected(target + " += 1");
             assertRejected(target + "++");
@@ -339,7 +338,7 @@ class ArrayAndUpdateConversionTest {
         assertEquals(expected, assertInstanceOf(IrVariable.class, expression).name());
     }
 
-    private static void assertVariableTarget(String expected, IrAssignmentTarget target) {
+    private static void assertVariableTarget(String expected, IrWriteBase target) {
         assertEquals(expected, assertInstanceOf(IrVariableTarget.class, target).name());
     }
 
