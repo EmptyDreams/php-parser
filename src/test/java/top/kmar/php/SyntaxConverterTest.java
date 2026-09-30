@@ -452,12 +452,14 @@ class SyntaxConverterTest {
         assertInstanceOf(IrEmpty.class, block.statements().get(3));
     }
 
-    // 嵌套声明和未支持子树一律报错，global 或跳转外壳不能跳过其可执行内容。
+    // 具名声明、global 或跳转外壳均递归转换内容，不能跳过内部未支持的反引号表达式。
     @Test
-    void rejectsUnsupportedStatementsAndNestedDeclarations() {
+    void rejectsUnsupportedSubtreesInsideStatementsAndNamedDeclarations() {
         for (String code : List.of(
                 "global ${(`echo sentinel`)};", "(`echo sentinel`);",
-                "function nested() {}", "class Nested {}", "goto end; end: (`echo sentinel`);")) {
+                "function nested() { `echo sentinel`; }",
+                "class Nested { function run() { `echo sentinel`; } }",
+                "goto end; end: (`echo sentinel`);")) {
             SyntaxBody syntax = syntaxBody(code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
         }

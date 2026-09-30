@@ -363,19 +363,19 @@ class ScopeStatementConversionTest {
         assertInstanceOf(IrLabel.class, converted.statements().get(4));
     }
 
-    // 新语句的值、动态名称和三种主体仍必须递归失败，不能吞掉嵌套命名声明或反引号表达式。
+    // 新语句的值、动态名称和三种主体均递归转换，不能吞掉嵌套具名声明内部的反引号表达式。
     @Test
     void propagatesUnsupportedSubtreesThroughEveryNewContainer() {
         for (String code : List.of(
                 "global ${(`echo sentinel`)};",
-                "global ${function() { function nested() {} }};",
+                "global ${function() { function nested() { `echo sentinel`; } }};",
                 "static $value = `echo sentinel`;",
-                "static $value = function() { class Nested {} };",
+                "static $value = function() { class Nested { function run() { `echo sentinel`; } } };",
                 "declare(custom=(`echo sentinel`));",
-                "declare(custom=function() { function nested() {} });",
+                "declare(custom=function() { function nested() { `echo sentinel`; } });",
                 "declare(ticks=1) (`echo sentinel`);",
-                "declare(ticks=1) { function nested() {} }",
-                "declare(ticks=1): class Nested {} enddeclare;")) {
+                "declare(ticks=1) { function nested() { `echo sentinel`; } }",
+                "declare(ticks=1): class Nested { function run() { `echo sentinel`; } } enddeclare;")) {
             assertRejectedBody(code);
         }
     }

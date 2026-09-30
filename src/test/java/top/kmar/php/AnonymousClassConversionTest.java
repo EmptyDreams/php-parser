@@ -585,7 +585,7 @@ class AnonymousClassConversionTest {
         }
     }
 
-    // 方法默认值和主体继续递归拒绝未支持的具名声明及反引号，不用原 AST 占位。
+    // 方法默认值、主体及其嵌套具名声明继续递归拒绝反引号，不用原 AST 占位。
     @Test
     void propagatesUnsupportedSubtreesFromEveryAnonymousClassContainer() {
         String shell = Character.toString(96) + "echo hello" + Character.toString(96);
@@ -594,11 +594,11 @@ class AnonymousClassConversionTest {
                 "new class { const VALUE = " + shell + "; }",
                 "new class { function run($value = " + shell + ") {} }",
                 "new class { function run() { " + shell + "; } }",
-                "new class { function run() { function nested() {} } }",
-                "new class { function run() { class Nested {} } }",
-                "new class { function run() { trait Nested {} } }",
-                "new class { function run() { interface Nested {} } }",
-                "new class { public $value = function() { function nested() {} }; }")) {
+                "new class { function run() { function nested() { `echo sentinel`; } } }",
+                "new class { function run() { class Nested { function method() { `echo sentinel`; } } } }",
+                "new class { function run() { trait Nested { function method() { `echo sentinel`; } } } }",
+                "new class { function run() { interface Nested { const VALUE = `echo sentinel`; } } }",
+                "new class { public $value = function() { function nested() { `echo sentinel`; } }; }")) {
             assertRejectedExpression(code);
         }
     }

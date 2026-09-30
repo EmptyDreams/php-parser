@@ -318,21 +318,21 @@ class ControlFlowConversionTest {
         assertEquals("value", fixedName(global.variables().getFirst().name()));
     }
 
-    // 已支持外壳不会吞掉内部未知语法，分支、处理器和 finally 中的命名声明仍必须明确失败。
+    // 已支持外壳及嵌套具名声明不会吞掉内部未知语法，分支、处理器和 finally 均递归报错。
     @Test
     void rejectsUnsupportedContentsInEveryNewStatementPosition() {
         for (String code : List.of(
                 "switch ((`echo sentinel`)) {}",
                 "switch ($value) { case (`echo sentinel`): ; }",
                 "switch ($value) { case 1: (`echo sentinel`); }",
-                "switch ($value) { default: function nestedDefault() {} }",
-                "switch ($value) { case 1: function nested() {} }",
+                "switch ($value) { default: function nestedDefault() { `echo sentinel`; } }",
+                "switch ($value) { case 1: function nested() { `echo sentinel`; } }",
                 "try { (`echo sentinel`); } finally {}",
                 "try {} catch (Problem $error) { (`echo sentinel`); }",
                 "try {} finally { (`echo sentinel`); }",
-                "try { class Nested {} } finally {}",
-                "try {} catch (Problem $error) { function nested() {} }",
-                "try {} finally { function nested() {} }",
+                "try { class Nested { function run() { `echo sentinel`; } } } finally {}",
+                "try {} catch (Problem $error) { function nested() { `echo sentinel`; } }",
+                "try {} finally { function nested() { `echo sentinel`; } }",
                 "throw (`echo sentinel`);")) {
             SyntaxBody syntax = assertDoesNotThrow(() -> syntaxBody(code), code);
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);

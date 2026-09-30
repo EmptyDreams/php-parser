@@ -354,14 +354,16 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(inner.captures().isEmpty());
     }
 
-    // 新增外壳不吞掉未支持的子树；反引号表达式和嵌套命名声明继续明确失败。
+    // 新增外壳不吞掉未支持的子树；嵌套具名声明内部的反引号表达式也必须递归失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewExpressionPosition() {
         for (String code : List.of("function($value = (`echo sentinel`)) {}", "function() { (`echo sentinel`); }",
                 "function() { return function() { (`echo sentinel`); }; }",
                 "function() { global ${(`echo sentinel`)}; }",
-                "function() { static $value = (`echo sentinel`); }", "function() { function nested() {} }",
-                "function() { class Nested {} }", "function() { return `echo sentinel`; }",
+                "function() { static $value = (`echo sentinel`); }",
+                "function() { function nested() { `echo sentinel`; } }",
+                "function() { class Nested { function run() { `echo sentinel`; } } }",
+                "function() { return `echo sentinel`; }",
                 "yield (`echo sentinel`)", "yield (`echo sentinel`) => 1", "yield 1 => (`echo sentinel`)",
                 "yield from (`echo sentinel`)")) {
             assertRejected(code);

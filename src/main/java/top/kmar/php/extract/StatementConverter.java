@@ -38,15 +38,37 @@ final class StatementConverter {
     }
 
     private IrStatement statement(AstNode node, String path) {
-        if (node instanceof NodeInnerStatement.Statement inner) {
-            return statement(context.required(inner.getStmt(), inner, path + ".stmt"), path + ".stmt");
-        }
-        if (node instanceof NodeTopStatement.Statement top) {
-            return statement(context.required(top.getStmt(), top, path + ".stmt"), path + ".stmt");
-        }
         // 分号产生式无字段、无生成变体，精确基类是解析器表示空语句的方式。
         if (node.getClass() == NodeStatement.class) return new IrEmpty(context.source(node));
         return switch (node) {
+            case NodeInnerStatement.Statement inner -> statement(
+                    context.required(inner.getStmt(), inner, path + ".stmt"), path + ".stmt");
+            case NodeTopStatement.Statement top -> statement(
+                    context.required(top.getStmt(), top, path + ".stmt"), path + ".stmt");
+            case NodeInnerStatement.FunctionDecl inner -> statement(
+                    context.required(inner.getFunction(), inner, path + ".function"), path + ".function");
+            case NodeTopStatement.FunctionDecl top -> statement(
+                    context.required(top.getFunction(), top, path + ".function"), path + ".function");
+            case NodeInnerStatement.ClassDecl inner -> statement(
+                    context.required(inner.getClazz(), inner, path + ".clazz"), path + ".clazz");
+            case NodeTopStatement.ClassDecl top -> statement(
+                    context.required(top.getClazz(), top, path + ".clazz"), path + ".clazz");
+            case NodeInnerStatement.InterfaceDecl inner -> statement(
+                    context.required(inner.getIface(), inner, path + ".iface"), path + ".iface");
+            case NodeTopStatement.InterfaceDecl top -> statement(
+                    context.required(top.getIface(), top, path + ".iface"), path + ".iface");
+            case NodeInnerStatement.TraitDecl inner -> statement(
+                    context.required(inner.getTrait(), inner, path + ".trait"), path + ".trait");
+            case NodeTopStatement.TraitDecl top -> statement(
+                    context.required(top.getTrait(), top, path + ".trait"), path + ".trait");
+            case NodeFunctionDeclarationStatement declaration ->
+                    new NamedDeclarationConverter(context, expressions).convert(declaration, path);
+            case NodeClassDeclarationStatement declaration ->
+                    new NamedDeclarationConverter(context, expressions).convert(declaration, path);
+            case NodeInterfaceDeclarationStatement declaration ->
+                    new NamedDeclarationConverter(context, expressions).convert(declaration, path);
+            case NodeTraitDeclarationStatement declaration ->
+                    new NamedDeclarationConverter(context, expressions).convert(declaration, path);
             case NodeStatement.Block block -> innerBlock(block.getStmts(), block, path + ".stmts");
             case NodeStatement.ExpressionStatement expr -> new IrExpressionStatement(
                     expressions.convert(context.required(expr.getExpression(), expr, path + ".expression"),

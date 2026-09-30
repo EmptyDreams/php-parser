@@ -13,7 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** 闭包和方法共用的签名转换；默认值直接进入 IR，不经过声明层的 AST 包装。 */
+/** 具名函数、闭包和方法共用的签名转换；默认值直接进入 IR，不经过声明层的 AST 包装。 */
 final class CallableSignatureConverter {
     private final ConversionContext context;
     private final ExpressionConverter expressions;

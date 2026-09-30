@@ -36,10 +36,32 @@ class SyntaxConverterContractTest {
         }
     }
 
-    // 调用方直接转换包含声明或导入的区段时明确失败，不自动过滤或提升。
+    // 区段内四类具名声明转换为声明语句，不能过滤声明或改变其与执行语句的相对顺序。
     @Test
-    void rejectsDeclarationsAndImportsInsideSelectedBodies() {
-        for (String code : List.of("function f() {}", "class C {}", "const A = 1;",
+    void acceptsNamedDeclarationsInsideSelectedBodies() {
+        PhpFile file = DeclarationExtractor.extract(Main.parse("""
+                <?php
+                echo 1;
+                function f() {}
+                class C {}
+                interface I {}
+                trait T {}
+                echo 2;
+                """));
+        IrBlock block = SyntaxConverter.convertBody(file.namespaceSections().getFirst().body());
+        assertEquals(6, block.statements().size());
+        assertInstanceOf(IrEcho.class, block.statements().getFirst());
+        assertInstanceOf(IrFunctionDeclaration.class, block.statements().get(1));
+        assertInstanceOf(IrClassDeclaration.class, block.statements().get(2));
+        assertInstanceOf(IrInterfaceDeclaration.class, block.statements().get(3));
+        assertInstanceOf(IrTraitDeclaration.class, block.statements().get(4));
+        assertInstanceOf(IrEcho.class, block.statements().getLast());
+    }
+
+    // 顶层常量和导入仍不属于语句转换子集，不能随着具名声明支持而被静默过滤。
+    @Test
+    void rejectsTopLevelConstantsAndImportsInsideSelectedBodies() {
+        for (String code : List.of("const A = 1;",
                 "use Vendor\\Thing;", "use function Vendor\\run;")) {
             PhpFile file = DeclarationExtractor.extract(Main.parse("<?php " + code));
             SyntaxBody body = file.namespaceSections().getFirst().body();
