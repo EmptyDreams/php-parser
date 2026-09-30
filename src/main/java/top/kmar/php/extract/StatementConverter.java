@@ -32,15 +32,29 @@ final class StatementConverter {
         var result = new ArrayList<IrStatement>(nodes.size());
         for (int i = 0; i < nodes.size(); i++) {
             String itemPath = path + "[" + i + "]";
-            result.add(statement(context.required(nodes.get(i), origin, itemPath), itemPath));
+            appendStatement(context.required(nodes.get(i), origin, itemPath), itemPath, result);
         }
         return result;
+    }
+
+    /** 多项顶层常量在原序列内展开，不产生改变层次的合成语句块。 */
+    void appendStatement(AstNode node, String path, List<IrStatement> result) {
+        if (node instanceof NodeTopStatement.Const constants) {
+            result.addAll(new TopLevelStatementConverter(context, expressions).constants(constants, path));
+        } else {
+            result.add(statement(node, path));
+        }
     }
 
     private IrStatement statement(AstNode node, String path) {
         // 分号产生式无字段、无生成变体，精确基类是解析器表示空语句的方式。
         if (node.getClass() == NodeStatement.class) return new IrEmpty(context.source(node));
         return switch (node) {
+            case NodeTopStatement.Use top -> new TopLevelStatementConverter(context, expressions).use(top, path);
+            case NodeTopStatement.UseTyped top -> new TopLevelStatementConverter(context, expressions).use(top, path);
+            case NodeTopStatement.UseGroup top -> new TopLevelStatementConverter(context, expressions).use(top, path);
+            case NodeTopStatement.UseMixedGroup top -> new TopLevelStatementConverter(context, expressions).use(top, path);
+            case NodeTopStatement.HaltCompiler top -> new TopLevelStatementConverter(context, expressions).halt(top, path);
             case NodeInnerStatement.Statement inner -> statement(
                     context.required(inner.getStmt(), inner, path + ".stmt"), path + ".stmt");
             case NodeTopStatement.Statement top -> statement(

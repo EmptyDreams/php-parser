@@ -153,7 +153,7 @@ class SemanticModelContractTest {
     void rejectsNestedNamespaceSections() {
         var ast = Main.parse("<?php namespace Outer { namespace Inner {} }");
         var error = assertThrows(DeclarationExtractionException.class, () -> DeclarationExtractor.extract(ast));
-        assertEquals("namespace.stmts", error.fieldPath());
+        assertEquals("program.stmts[0].stmts[0]", error.fieldPath());
     }
 
     // 验证模型及查询候选集合只读，避免调用方修改共享的声明结果。

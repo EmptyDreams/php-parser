@@ -58,14 +58,35 @@ class SyntaxConverterContractTest {
         assertInstanceOf(IrEcho.class, block.statements().getLast());
     }
 
-    // 顶层常量和导入仍不属于语句转换子集，不能随着具名声明支持而被静默过滤。
+    // 选定区段语法体原位保留导入、逐项常量及 halt 标记，不重复读取声明视图。
     @Test
-    void rejectsTopLevelConstantsAndImportsInsideSelectedBodies() {
-        for (String code : List.of("const A = 1;",
-                "use Vendor\\Thing;", "use function Vendor\\run;")) {
-            PhpFile file = DeclarationExtractor.extract(Main.parse("<?php " + code));
-            SyntaxBody body = file.namespaceSections().getFirst().body();
-            assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(body), code);
+    void acceptsTopLevelConstantsImportsAndHaltInsideSelectedBodies() {
+        PhpFile file = DeclarationExtractor.extract(Main.parse("""
+                <?php
+                use Vendor\\Thing;
+                const A = 1, B = 2;
+                use function Vendor\\run;
+                __halt_compiler();ignored payload
+                """));
+        IrBlock body = SyntaxConverter.convertBody(file.namespaceSections().getFirst().body());
+        assertEquals(5, body.statements().size());
+        assertInstanceOf(IrUse.class, body.statements().getFirst());
+        assertEquals("A", assertInstanceOf(IrConstantDeclaration.class, body.statements().get(1)).name());
+        assertEquals("B", assertInstanceOf(IrConstantDeclaration.class, body.statements().get(2)).name());
+        assertInstanceOf(IrUse.class, body.statements().get(3));
+        assertInstanceOf(IrHaltCompiler.class, body.statements().getLast());
+    }
+
+    // namespace 边界只由整文件入口处理，局部 body 不能静默过滤或展开 namespace 包装。
+    @Test
+    void rejectsNamespaceBoundariesInsideSelectedBodies() {
+        for (String code : List.of("namespace App;", "namespace App {}", "namespace {}")) {
+            NodeProgram program = (NodeProgram) Main.parse("<?php " + code);
+            SyntaxBody body = new SyntaxBody(List.of(program.getStmts().getValue().getFirst()),
+                    new SourceInfo("body-namespace.php", null));
+            var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(body), code);
+            assertEquals("body.statements[0]", error.fieldPath());
+            assertEquals("body-namespace.php", error.source().sourceId());
         }
     }
 

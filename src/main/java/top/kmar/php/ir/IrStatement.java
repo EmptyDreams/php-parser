@@ -6,6 +6,7 @@ import top.kmar.php.model.SourceInfo;
 public sealed interface IrStatement permits IrBlock, IrExpressionStatement, IrReturn, IrEcho, IrIf, IrEmpty,
         IrWhile, IrDoWhile, IrFor, IrForeach, IrBreak, IrContinue, IrSwitch, IrTry, IrThrow, IrUnset,
         IrGlobal, IrStaticVariables, IrDeclare, IrGoto, IrLabel,
-        IrFunctionDeclaration, IrClassDeclaration, IrInterfaceDeclaration, IrTraitDeclaration {
+        IrFunctionDeclaration, IrClassDeclaration, IrInterfaceDeclaration, IrTraitDeclaration,
+        IrUse, IrConstantDeclaration, IrHaltCompiler {
     SourceInfo source();
 }
