@@ -205,7 +205,7 @@ class FileConversionTest {
         assertEquals(1.25, assertInstanceOf(IrFloatLiteral.class, values.get(1).value()).value());
         assertEquals(Double.POSITIVE_INFINITY, assertInstanceOf(IrFloatLiteral.class, values.get(2).value()).value());
         assertBytes(values.get(3).value(), "A\nB");
-        assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, values.get(4).value()).kind());
+        assertInstanceOf(IrNullLiteral.class, values.get(4).value());
         IrBinary sum = assertInstanceOf(IrBinary.class, values.get(5).value());
         assertEquals(BinaryOperator.ADD, sum.operator());
         assertInteger(sum.left(), 1);

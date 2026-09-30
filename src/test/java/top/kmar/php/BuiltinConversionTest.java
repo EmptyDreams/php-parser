@@ -209,8 +209,8 @@ class BuiltinConversionTest {
         for (String keyword : List.of("exit", "die", "ExIt", "DiE")) {
             assertNull(assertInstanceOf(IrExit.class, expression(keyword)).expression());
             assertNull(assertInstanceOf(IrExit.class, expression(keyword + "()")).expression());
-            assertLiteral(assertInstanceOf(IrExit.class, expression(keyword + "(null)")).expression(),
-                    LiteralKind.NULL, "null");
+            assertInstanceOf(IrNullLiteral.class,
+                    assertInstanceOf(IrExit.class, expression(keyword + "(null)")).expression());
             assertInteger(assertInstanceOf(IrExit.class, expression(keyword + "(3)")).expression(), 3);
             assertString(assertInstanceOf(IrExit.class, expression(keyword + "('message')")).expression(),
                     "message");
@@ -377,12 +377,6 @@ class BuiltinConversionTest {
 
     private static void assertInteger(IrExpression expression, long value) {
         assertEquals(value, assertInstanceOf(IrIntegerLiteral.class, expression).value());
-    }
-
-    private static void assertLiteral(IrExpression expression, LiteralKind kind, String lexeme) {
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, expression);
-        assertEquals(kind, literal.kind());
-        assertEquals(lexeme, literal.lexeme());
     }
 
     private static void assertString(IrExpression expression, String value) {

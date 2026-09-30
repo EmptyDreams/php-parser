@@ -43,14 +43,17 @@ class SyntaxConverterTest {
                 .forEach((code, value) -> assertString(expression(code), value));
     }
 
-    // 布尔值和 null 不区分大小写；只有非限定名或全局单名称可以转为字面量。
+    // 布尔值解码为 Java 真/假，null 使用独立节点；仅非限定名或全局单名称不区分大小写识别。
     @Test
-    void classifiesReservedConstantNamesWithoutResolvingQualifiedNames() {
-        for (String value : List.of("true", "FALSE", "TrUe", "\\TRUE", "\\false")) {
-            assertLiteral(expression(value), LiteralKind.BOOLEAN, value);
+    void decodesReservedConstantNamesWithoutResolvingQualifiedNames() {
+        for (String value : List.of("true", "TRUE", "TrUe", "\\TRUE", "\\true")) {
+            assertTrue(assertInstanceOf(IrBooleanLiteral.class, expression(value)).value(), value);
+        }
+        for (String value : List.of("false", "FALSE", "FaLsE", "\\FALSE", "\\false")) {
+            assertFalse(assertInstanceOf(IrBooleanLiteral.class, expression(value)).value(), value);
         }
         for (String value : List.of("null", "NuLl", "\\NULL")) {
-            assertLiteral(expression(value), LiteralKind.NULL, value);
+            assertInstanceOf(IrNullLiteral.class, expression(value), value);
         }
         assertConstant("SOME_VALUE", NameForm.UNQUALIFIED);
         assertConstant("Some\\Value", NameForm.QUALIFIED);
@@ -266,7 +269,7 @@ class SyntaxConverterTest {
         assertString(echo.expressions().get(1), "next");
         assertInteger(echo.expressions().get(2), 3);
         assertNull(assertInstanceOf(IrReturn.class, block.statements().get(2)).value());
-        assertLiteral(assertInstanceOf(IrReturn.class, block.statements().get(3)).value(), LiteralKind.NULL, "null");
+        assertInstanceOf(IrNullLiteral.class, assertInstanceOf(IrReturn.class, block.statements().get(3)).value());
         assertTrue(assertInstanceOf(IrBlock.class, block.statements().get(4)).statements().isEmpty());
         assertInstanceOf(IrEmpty.class, block.statements().get(5));
     }
@@ -402,8 +405,8 @@ class SyntaxConverterTest {
         List<TopLevelDeclaration> declarations = file.namespaceSections().getFirst().declarations();
         FunctionDefinition good = assertInstanceOf(FunctionDefinition.class, declarations.getFirst());
         assertInstanceOf(IrReturn.class, SyntaxConverter.convertBody(good.body()).statements().getFirst());
-        assertLiteral(SyntaxConverter.convertExpression(good.signature().parameters().getFirst().defaultValue()),
-                LiteralKind.NULL, "null");
+        assertInstanceOf(IrNullLiteral.class,
+                SyntaxConverter.convertExpression(good.signature().parameters().getFirst().defaultValue()));
         ClassLikeDefinition type = assertInstanceOf(ClassLikeDefinition.class, declarations.get(2));
         PropertyDefinition property = assertInstanceOf(PropertyDefinition.class, type.members().getFirst());
         assertInstanceOf(IrBinary.class, SyntaxConverter.convertExpression(property.initialValue()));
@@ -492,12 +495,6 @@ class SyntaxConverterTest {
         NodeProgram parsed = (NodeProgram) Main.parse("<?php " + code + ";");
         NodeExpr syntax = parsed.getStmts().getValue().getFirst().getStmt().getExpression();
         return new SyntaxExpression(syntax, new SourceInfo(null, null));
-    }
-
-    private static void assertLiteral(IrExpression actual, LiteralKind kind, String lexeme) {
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, actual);
-        assertEquals(kind, literal.kind());
-        assertEquals(lexeme, literal.lexeme());
     }
 
     private static void assertString(IrExpression actual, String value) {

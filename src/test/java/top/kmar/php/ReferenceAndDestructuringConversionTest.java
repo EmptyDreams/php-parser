@@ -143,7 +143,7 @@ class ReferenceAndDestructuringConversionTest {
             assertString(fourth.key(), "key");
             assertCall(fourth.value(), "next");
             IrReferenceArrayEntry fifth = assertInstanceOf(IrReferenceArrayEntry.class, entries.get(4));
-            assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, fifth.key()).kind());
+            assertInstanceOf(IrNullLiteral.class, fifth.key());
             assertVariableTarget(fifth.target(), "last");
         }
     }
@@ -243,7 +243,7 @@ class ReferenceAndDestructuringConversionTest {
         assertEquals(3, repeated.slots().size());
         assertString(repeated.slots().getFirst().key(), "same");
         assertString(repeated.slots().get(1).key(), "same");
-        assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, repeated.slots().get(2).key()).kind());
+        assertInstanceOf(IrNullLiteral.class, repeated.slots().get(2).key());
         IrDestructuringPattern nestedKeyed = assertInstanceOf(IrDestructuringPattern.class,
                 destructuring("[['key' => $value]] = $source").pattern().slots().getFirst().target());
         assertString(nestedKeyed.slots().getFirst().key(), "key");

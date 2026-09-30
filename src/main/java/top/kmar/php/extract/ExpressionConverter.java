@@ -409,10 +409,12 @@ final class ExpressionConverter {
         if ((name.form() == NameForm.UNQUALIFIED || name.form() == NameForm.FULLY_QUALIFIED)
                 && component.indexOf('\\') < 0) {
             switch (component.toLowerCase(Locale.ROOT)) {
-                case "true", "false":
-                    return new IrLiteral(LiteralKind.BOOLEAN, spelling, context.source(node));
+                case "true":
+                    return new IrBooleanLiteral(true, context.source(node));
+                case "false":
+                    return new IrBooleanLiteral(false, context.source(node));
                 case "null":
-                    return new IrLiteral(LiteralKind.NULL, spelling, context.source(node));
+                    return new IrNullLiteral(context.source(node));
                 default:
                     break;
             }

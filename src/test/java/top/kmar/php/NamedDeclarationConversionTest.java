@@ -92,7 +92,7 @@ class NamedDeclarationConversionTest {
         assertNotNull(value.declaredType());
         assertTrue(value.declaredType().nullable());
         assertName(value.declaredType().name(), "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
-        assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, value.defaultValue()).kind());
+        assertInstanceOf(IrNullLiteral.class, value.defaultValue());
         IrParameter items = function.parameters().get(2);
         assertNotNull(items.declaredType());
         assertFalse(items.declaredType().nullable());
@@ -186,7 +186,7 @@ class NamedDeclarationConversionTest {
             assertNull(first.initialValue());
             IrProperty second = assertInstanceOf(IrProperty.class, converted.get(1));
             assertEquals("second", second.name());
-            assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, second.initialValue()).kind());
+            assertInstanceOf(IrNullLiteral.class, second.initialValue());
             IrMethod method = assertInstanceOf(IrMethod.class, converted.get(2));
             assertEquals("echo", method.name());
             assertTrue(method.declaredModifiers().isEmpty());

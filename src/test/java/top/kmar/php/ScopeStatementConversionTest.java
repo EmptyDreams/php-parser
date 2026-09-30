@@ -76,9 +76,7 @@ class ScopeStatementConversionTest {
         assertEquals("value", statement.variables().get(0).name());
         assertNull(statement.variables().get(0).initializer());
         assertEquals("value", statement.variables().get(1).name());
-        IrLiteral explicitNull = assertInstanceOf(IrLiteral.class, statement.variables().get(1).initializer());
-        assertEquals(LiteralKind.NULL, explicitNull.kind());
-        assertEquals("NuLl", explicitNull.lexeme());
+        assertInstanceOf(IrNullLiteral.class, statement.variables().get(1).initializer());
         assertEquals("Value", statement.variables().get(2).name());
         assertInteger(statement.variables().get(2).initializer(), 2);
     }
@@ -197,8 +195,7 @@ class ScopeStatementConversionTest {
                         .value().toByteArray());
         assertInteger(declaration.directives().get(2).value(), 2);
         assertInteger(declaration.directives().get(3).value(), 3);
-        assertEquals(LiteralKind.BOOLEAN,
-                assertInstanceOf(IrLiteral.class, declaration.directives().get(4).value()).kind());
+        assertFalse(assertInstanceOf(IrBooleanLiteral.class, declaration.directives().get(4).value()).value());
     }
 
     // 指令值按普通表达式保存，既不执行调用，也不要求值已经是 PHP 字面量。

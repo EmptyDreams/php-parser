@@ -70,9 +70,7 @@ class ControlFlowConversionTest {
         assertNull(cases.get(2).condition());
         assertEquals(1, cases.get(2).body().statements().size());
         assertInstanceOf(IrEmpty.class, cases.get(2).body().statements().getFirst());
-        IrLiteral nullCase = assertInstanceOf(IrLiteral.class, cases.get(3).condition());
-        assertEquals(LiteralKind.NULL, nullCase.kind());
-        assertEquals("null", nullCase.lexeme());
+        assertInstanceOf(IrNullLiteral.class, cases.get(3).condition());
         assertEquals(1, cases.get(3).body().statements().size());
         assertEcho(cases.get(3).body().statements().getFirst(), 30);
         assertInteger(cases.get(4).condition(), 1);

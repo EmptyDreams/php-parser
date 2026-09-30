@@ -124,9 +124,7 @@ class AnonymousClassConversionTest {
         assertNull(assertInstanceOf(IrProperty.class, members.get(0)).initialValue());
         IrProperty explicit = assertInstanceOf(IrProperty.class, members.get(1));
         assertEquals("value", explicit.name());
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, explicit.initialValue());
-        assertEquals(LiteralKind.NULL, literal.kind());
-        assertEquals("NuLl", literal.lexeme());
+        assertInstanceOf(IrNullLiteral.class, explicit.initialValue());
         assertEquals("Value", assertInstanceOf(IrProperty.class, members.get(2)).name());
         assertEquals("X", assertInstanceOf(IrClassConstant.class, members.get(3)).name());
         assertEquals("X", assertInstanceOf(IrClassConstant.class, members.get(4)).name());
@@ -174,7 +172,7 @@ class AnonymousClassConversionTest {
         assertNotNull(first.declaredType());
         assertTrue(first.declaredType().nullable());
         assertName(first.declaredType().name(), "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
-        assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, first.defaultValue()).kind());
+        assertInstanceOf(IrNullLiteral.class, first.defaultValue());
         IrParameter second = method.parameters().get(1);
         assertEquals("items", second.name());
         assertFalse(second.byReference());
@@ -205,8 +203,7 @@ class AnonymousClassConversionTest {
         assertFalse(missing.returnsReference());
         assertNull(missing.parameters().get(0).declaredType());
         assertNull(missing.parameters().get(0).defaultValue());
-        assertEquals(LiteralKind.NULL,
-                assertInstanceOf(IrLiteral.class, missing.parameters().get(1).defaultValue()).kind());
+        assertInstanceOf(IrNullLiteral.class, missing.parameters().get(1).defaultValue());
         IrMethod empty = assertInstanceOf(IrMethod.class, members.get(1));
         assertNotNull(empty.body());
         assertTrue(empty.body().statements().isEmpty());

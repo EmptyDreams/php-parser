@@ -141,7 +141,7 @@ class BuiltinConversionContractTest {
         assertNull(omitted.expression());
         assertNull(parentheses.expression());
         IrExit explicitNull = assertInstanceOf(IrExit.class, convert(parsedExpression("exit(null)")));
-        assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, explicitNull.expression()).kind());
+        assertInstanceOf(IrNullLiteral.class, explicitNull.expression());
     }
 
     // 每种新节点使用对应 AST 的范围，内置函数包装和参数包装不得覆盖真实来源。

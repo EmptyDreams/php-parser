@@ -415,9 +415,7 @@ class ClosureAndGeneratorConversionTest {
     }
 
     private static void assertNullLiteral(IrExpression expression) {
-        IrLiteral literal = assertInstanceOf(IrLiteral.class, expression);
-        assertEquals(LiteralKind.NULL, literal.kind());
-        assertEquals("null", literal.lexeme());
+        assertInstanceOf(IrNullLiteral.class, expression);
     }
 
     private static void assertString(IrExpression expression, String value) {

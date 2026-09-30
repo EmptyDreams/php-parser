@@ -54,7 +54,7 @@ class ArrayAndUpdateConversionTest {
             assertNull(entries.getFirst().key());
             assertInteger(2, entries.get(1).key());
             assertInteger(2, entries.get(2).key());
-            assertEquals(LiteralKind.NULL, assertInstanceOf(IrLiteral.class, entries.get(3).key()).kind());
+            assertInstanceOf(IrNullLiteral.class, entries.get(3).key());
             assertNull(entries.get(4).key());
             assertEquals(1.5, assertInstanceOf(IrFloatLiteral.class, entries.get(5).key()).value());
             assertString("2", entries.get(6).key());
