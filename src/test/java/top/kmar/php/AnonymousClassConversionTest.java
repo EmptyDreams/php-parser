@@ -171,7 +171,8 @@ class AnonymousClassConversionTest {
         assertFalse(first.variadic());
         assertNotNull(first.declaredType());
         assertTrue(first.declaredType().nullable());
-        assertName(first.declaredType().name(), "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
+        assertName(assertInstanceOf(IrNamedType.class, first.declaredType().type()).name(),
+                "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
         assertInstanceOf(IrNullLiteral.class, first.defaultValue());
         IrParameter second = method.parameters().get(1);
         assertEquals("items", second.name());
@@ -179,10 +180,12 @@ class AnonymousClassConversionTest {
         assertTrue(second.variadic());
         assertNull(second.defaultValue());
         assertNotNull(second.declaredType());
-        assertName(second.declaredType().name(), "array", NameForm.UNQUALIFIED);
+        assertEquals(BuiltinTypeKind.ARRAY,
+                assertInstanceOf(IrBuiltinType.class, second.declaredType().type()).kind());
         assertNotNull(method.returnType());
         assertTrue(method.returnType().nullable());
-        assertName(method.returnType().name(), "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
+        assertName(assertInstanceOf(IrNamedType.class, method.returnType().type()).name(),
+                "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
         assertNotNull(method.body());
         assertVariable(assertInstanceOf(IrReturn.class, method.body().statements().getFirst()).value(), "value");
     }

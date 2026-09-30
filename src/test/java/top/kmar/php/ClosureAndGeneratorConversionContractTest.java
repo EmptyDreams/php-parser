@@ -242,7 +242,7 @@ class ClosureAndGeneratorConversionContractTest {
         assertSource(syntax, result.source());
         assertSource(parameter, result.parameters().getFirst().source());
         assertSource(type, result.parameters().getFirst().declaredType().source());
-        assertSource(typeToken, result.parameters().getFirst().declaredType().name().source());
+        assertSource(typeToken, result.parameters().getFirst().declaredType().type().source());
         assertEquals(range(LEAF), result.parameters().getFirst().defaultValue().source().range());
         assertSource(type, result.returnType().source());
         assertSource(capture, result.captures().getFirst().source());

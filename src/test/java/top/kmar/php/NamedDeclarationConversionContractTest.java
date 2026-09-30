@@ -243,7 +243,7 @@ class NamedDeclarationConversionContractTest {
         assertSource(DECLARATION, converted.source());
         assertSource(ITEM, converted.parameters().getFirst().source());
         assertSource(ITEM, converted.parameters().getFirst().declaredType().source());
-        assertSource(LEAF, converted.parameters().getFirst().declaredType().name().source());
+        assertSource(LEAF, converted.parameters().getFirst().declaredType().type().source());
         assertSource(VALUE, converted.parameters().getFirst().defaultValue().source());
         assertSource(ITEM, converted.returnType().source());
         assertSource(BODY, converted.body().source());

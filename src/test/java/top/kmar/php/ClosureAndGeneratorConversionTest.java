@@ -8,7 +8,6 @@ import top.kmar.php.model.NameForm;
 import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
 import top.kmar.php.model.SyntaxExpression;
-import top.kmar.php.model.TypeReference;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -56,23 +55,23 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(ordinaryReference.parameters().getFirst().variadic());
     }
 
-    // 类型声明保留可空标记、名称形式和大小写，包括 array/callable 两种关键字类型。
+    // 类型声明保留可空标记和具名类型写法，array/callable 归一为明确的内置类型。
     @Test
     void preservesParameterAndReturnTypeForms() {
         IrClosure closure = closure("function (?Thing $a, Vendor\\Thing $b, \\Root\\Thing $c, "
                 + "namespace\\Thing $d, ArRaY $e, ?CaLlAbLe $f): ?\\Result\\Value {}");
         List<IrParameter> parameters = closure.parameters();
         assertEquals(6, parameters.size());
-        assertType(parameters.get(0).declaredType(), "Thing", NameForm.UNQUALIFIED, true);
-        assertType(parameters.get(1).declaredType(), "Vendor\\Thing", NameForm.QUALIFIED, false);
-        assertType(parameters.get(2).declaredType(), "\\Root\\Thing", NameForm.FULLY_QUALIFIED, false);
-        assertType(parameters.get(3).declaredType(), "namespace\\Thing", NameForm.NAMESPACE_RELATIVE, false);
-        assertType(parameters.get(4).declaredType(), "ArRaY", NameForm.UNQUALIFIED, false);
-        assertType(parameters.get(5).declaredType(), "CaLlAbLe", NameForm.UNQUALIFIED, true);
-        assertType(closure.returnType(), "\\Result\\Value", NameForm.FULLY_QUALIFIED, true);
-        assertType(closure("function(): array {}").returnType(), "array", NameForm.UNQUALIFIED, false);
-        assertType(closure("function(): callable {}").returnType(), "callable", NameForm.UNQUALIFIED, false);
-        assertType(closure("function(): namespace\\Result {}").returnType(),
+        assertNamedType(parameters.get(0).declaredType(), "Thing", NameForm.UNQUALIFIED, true);
+        assertNamedType(parameters.get(1).declaredType(), "Vendor\\Thing", NameForm.QUALIFIED, false);
+        assertNamedType(parameters.get(2).declaredType(), "\\Root\\Thing", NameForm.FULLY_QUALIFIED, false);
+        assertNamedType(parameters.get(3).declaredType(), "namespace\\Thing", NameForm.NAMESPACE_RELATIVE, false);
+        assertBuiltinType(parameters.get(4).declaredType(), BuiltinTypeKind.ARRAY, false);
+        assertBuiltinType(parameters.get(5).declaredType(), BuiltinTypeKind.CALLABLE, true);
+        assertNamedType(closure.returnType(), "\\Result\\Value", NameForm.FULLY_QUALIFIED, true);
+        assertBuiltinType(closure("function(): array {}").returnType(), BuiltinTypeKind.ARRAY, false);
+        assertBuiltinType(closure("function(): callable {}").returnType(), BuiltinTypeKind.CALLABLE, false);
+        assertNamedType(closure("function(): namespace\\Result {}").returnType(),
                 "namespace\\Result", NameForm.NAMESPACE_RELATIVE, false);
     }
 
@@ -183,7 +182,7 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(closure.parameters().get(2).variadic());
         assertInteger(closure.parameters().get(2).defaultValue(), 1);
         assertEquals(List.of("same", "same", "this"), closure.captures().stream().map(IrClosureCapture::name).toList());
-        assertType(closure.returnType(), "int", NameForm.UNQUALIFIED, false);
+        assertBuiltinType(closure.returnType(), BuiltinTypeKind.INTEGER, false);
         assertInteger(assertInstanceOf(IrYield.class, statementExpression(closure.body(), 0)).value(), 1);
         IrClosure referenceDelegation = closure("function &() { yield from []; }");
         assertTrue(referenceDelegation.returnsReference());
@@ -395,10 +394,17 @@ class ClosureAndGeneratorConversionTest {
         return assertInstanceOf(IrExpressionStatement.class, body.statements().get(index)).expression();
     }
 
-    private static void assertType(TypeReference type, String spelling, NameForm form, boolean nullable) {
+    private static void assertNamedType(IrTypeReference type, String spelling, NameForm form, boolean nullable) {
         assertNotNull(type);
-        assertEquals(spelling, type.name().spelling());
-        assertEquals(form, type.name().form());
+        IrNamedType named = assertInstanceOf(IrNamedType.class, type.type());
+        assertEquals(spelling, named.name().spelling());
+        assertEquals(form, named.name().form());
+        assertEquals(nullable, type.nullable());
+    }
+
+    private static void assertBuiltinType(IrTypeReference type, BuiltinTypeKind kind, boolean nullable) {
+        assertNotNull(type);
+        assertEquals(kind, assertInstanceOf(IrBuiltinType.class, type.type()).kind());
         assertEquals(nullable, type.nullable());
     }
 

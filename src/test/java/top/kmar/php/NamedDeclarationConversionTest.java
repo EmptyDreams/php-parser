@@ -91,26 +91,31 @@ class NamedDeclarationConversionTest {
         assertFalse(value.variadic());
         assertNotNull(value.declaredType());
         assertTrue(value.declaredType().nullable());
-        assertName(value.declaredType().name(), "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
+        assertName(assertInstanceOf(IrNamedType.class, value.declaredType().type()).name(),
+                "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
         assertInstanceOf(IrNullLiteral.class, value.defaultValue());
         IrParameter items = function.parameters().get(2);
         assertNotNull(items.declaredType());
         assertFalse(items.declaredType().nullable());
-        assertName(items.declaredType().name(), "array", NameForm.UNQUALIFIED);
+        assertEquals(BuiltinTypeKind.ARRAY,
+                assertInstanceOf(IrBuiltinType.class, items.declaredType().type()).kind());
         assertEquals(1, assertInstanceOf(IrArrayLiteral.class, items.defaultValue()).entries().size());
         IrParameter factory = function.parameters().get(3);
         assertNotNull(factory.declaredType());
-        assertName(factory.declaredType().name(), "callable", NameForm.UNQUALIFIED);
+        assertEquals(BuiltinTypeKind.CALLABLE,
+                assertInstanceOf(IrBuiltinType.class, factory.declaredType().type()).kind());
         assertCall(factory.defaultValue(), "makeFactory");
         IrParameter rest = function.parameters().get(4);
         assertTrue(rest.variadic());
         assertFalse(rest.byReference());
         assertNull(rest.defaultValue());
         assertNotNull(rest.declaredType());
-        assertName(rest.declaredType().name(), "int", NameForm.UNQUALIFIED);
+        assertEquals(BuiltinTypeKind.INTEGER,
+                assertInstanceOf(IrBuiltinType.class, rest.declaredType().type()).kind());
         assertNotNull(function.returnType());
         assertTrue(function.returnType().nullable());
-        assertName(function.returnType().name(), "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
+        assertName(assertInstanceOf(IrNamedType.class, function.returnType().type()).name(),
+                "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
         assertVariable(assertInstanceOf(IrReturn.class, function.body().statements().getFirst()).value(), "value");
     }
 
