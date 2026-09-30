@@ -8,7 +8,7 @@ import java.util.Objects;
 
 /** 解码字面量文本，不求值；单次转换内复用缓冲区，发布的字节快照不共享可写存储。 */
 final class StringLiteralDecoder {
-    enum Mode { RAW, SINGLE_QUOTED, DOUBLE_QUOTED, HEREDOC }
+    enum Mode { RAW, SINGLE_QUOTED, DOUBLE_QUOTED, BACKTICK, HEREDOC }
 
     /** 使用原字符串的区间，避免为去引号或连续文本段创建额外字符串。 */
     record Fragment(String text, int start, int end, AstNode origin, String path) {
@@ -51,8 +51,12 @@ final class StringLiteralDecoder {
                 case 'e' -> buffer.write(27);
                 case '\\', '$' -> buffer.write(escape);
                 case '"' -> {
-                    if (mode == Mode.HEREDOC) buffer.write('\\');
+                    if (mode != Mode.DOUBLE_QUOTED) buffer.write('\\');
                     buffer.write('"');
+                }
+                case '`' -> {
+                    if (mode != Mode.BACKTICK) buffer.write('\\');
+                    buffer.write('`');
                 }
                 case 'x', 'X' -> {
                     int digit = hex(cursor.peek());

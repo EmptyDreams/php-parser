@@ -478,7 +478,7 @@ class AnonymousClassConversionContractTest {
     // 新支持的成员外壳不能掩盖仍不支持的内部表达式，转换错误定位到具体字段。
     @Test
     void propagatesUnsupportedExpressionsFromEveryNewBoundary() {
-        NodeExpr unsupported = parsedExpression("`noop`");
+        NodeExpr unsupported = new NodeExpr.ExprWithoutVariable(new NodeExprWithoutVariable(), VALUE);
         assertContainsFailure(definition(arguments(new NodeArgument.Arg(unsupported, ITEM))), ".ctorArgs.args[0].arg");
         assertContainsFailure(definition(members(propertyGroup(modifiers(publicModifier()),
                 new NodeProperty.PropertyWithDefault(token("value", LEAF), unsupported, ITEM)))), ".props[0].defaultValue");
@@ -506,7 +506,7 @@ class AnonymousClassConversionContractTest {
                         public function nested() { return new class { public $text = "nested"; }; }
                     };
                 }
-                function unsupported() { return new class { public $value = `noop`; }; }
+                function unsupported() { return new class { public $value = ($invalid[]); }; }
                 """), "anonymous.php");
         var declarations = file.namespaceSections().getFirst().declarations();
         var function = assertInstanceOf(FunctionDefinition.class, declarations.getFirst());
@@ -663,11 +663,6 @@ class AnonymousClassConversionContractTest {
 
     private static void assertPrecedenceFailure(NodeTraitPrecedence precedence, String suffix) {
         assertRuleFailure(new NodeTraitAdaptation.Precedence(precedence, GROUP), suffix);
-    }
-
-    private static NodeExpr parsedExpression(String code) {
-        NodeProgram program = (NodeProgram) Main.parse("<?php " + code + ";");
-        return program.getStmts().getValue().getFirst().getStmt().getExpression();
     }
 
     private static NameReference irName(String name) { return new NameReference(name, NameForm.UNQUALIFIED, SOURCE); }

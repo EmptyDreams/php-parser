@@ -183,7 +183,7 @@ class ScopeStatementConversionContractTest {
     // 新语句外壳不吞掉未支持表达式，诊断包含全局名、初始化、指令值或语句体的完整路径。
     @Test
     void propagatesUnsupportedNestedExpressionsWithFieldPaths() {
-        NodeExpr unsupported = parsedExpression("`echo sentinel`");
+        NodeExpr unsupported = new NodeExpr.ExprWithoutVariable(new NodeExprWithoutVariable(), VALUE);
         assertFailure(globals(new NodeSimpleVariable.IndirectVar(unsupported, ENTRY)), ".globalVars[0].e", false);
         assertFailure(statics(new NodeStaticVar.StaticVarWithDefault(token("value", LEAF), unsupported, ENTRY)),
                 ".staticVars[0].defaultValue", false);
@@ -345,7 +345,7 @@ class ScopeStatementConversionContractTest {
                     declare(Custom = $value) { goto Finish; Finish: ; }
                     declare(ticks = 1);
                 }
-                function unsupported() { static $value = `echo sentinel`; }
+                function unsupported() { static $value = ($invalid[]); }
                 """), "scope.php");
         var declarations = file.namespaceSections().getFirst().declarations();
         var function = (FunctionDefinition) declarations.getFirst();
@@ -413,11 +413,6 @@ class ScopeStatementConversionContractTest {
         IrBlock block = SyntaxConverter.convertBody(new SyntaxBody(List.of(statement), SOURCE));
         assertEquals(1, block.statements().size());
         return block.statements().getFirst();
-    }
-
-    private static NodeExpr parsedExpression(String code) {
-        NodeProgram program = (NodeProgram) Main.parse("<?php " + code + ";");
-        return program.getStmts().getValue().getFirst().getStmt().getExpression();
     }
 
     private static void assertFailure(NodeStatement statement, String field) {

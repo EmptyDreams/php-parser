@@ -41,6 +41,9 @@ final class ExpressionConverter {
         return switch (node) {
             case NodeExprWithoutVariable.Scalar ignored -> scalar(
                     context.required(node.getScalar(), node, path + ".scalar"), path + ".scalar");
+            case NodeExprWithoutVariable.ShellExec ignored -> new IrShellExec(
+                    strings.command(context.required(node.getCmd(), node, path + ".cmd"), path + ".cmd"),
+                    context.source(node));
             case NodeExprWithoutVariable.Paren ignored -> convert(
                     context.required(node.getExpr(), node, path + ".expr"), path + ".expr");
             case NodeExprWithoutVariable.Assign ignored -> new IrAssignment(

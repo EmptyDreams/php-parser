@@ -407,17 +407,17 @@ class NamedDeclarationConversionContractTest {
     @Test
     void propagatesUnsupportedSubtreesThroughDeclarationBoundaries() {
         for (UnsupportedCase test : List.of(
-                new UnsupportedCase("function run($value = `noop`) {}", ".params[0].defaultValue"),
-                new UnsupportedCase("function run() { `noop`; }", ".stmts[0].stmt.expression"),
-                new UnsupportedCase("function run() { function nested() { `noop`; } }", ".function.stmts[0].stmt.expression"),
-                new UnsupportedCase("class C { public $value = `noop`; }", ".props[0].defaultValue"),
-                new UnsupportedCase("class C { const VALUE = `noop`; }", ".consts[0].value"),
-                new UnsupportedCase("class C { function run($value = `noop`) {} }", ".params[0].defaultValue"),
-                new UnsupportedCase("class C { function run() { `noop`; } }", ".body.stmts[0].stmt.expression"),
-                new UnsupportedCase("interface I { const VALUE = `noop`; }", ".consts[0].value"),
-                new UnsupportedCase("interface I { function run($value = `noop`); }", ".params[0].defaultValue"),
-                new UnsupportedCase("trait T { public $value = `noop`; }", ".props[0].defaultValue"),
-                new UnsupportedCase("trait T { function run() { `noop`; } }", ".body.stmts[0].stmt.expression"))) {
+                new UnsupportedCase("function run($value = ($invalid[])) {}", ".params[0].defaultValue"),
+                new UnsupportedCase("function run() { ($invalid[]); }", ".stmts[0].stmt.expression"),
+                new UnsupportedCase("function run() { function nested() { ($invalid[]); } }", ".function.stmts[0].stmt.expression"),
+                new UnsupportedCase("class C { public $value = ($invalid[]); }", ".props[0].defaultValue"),
+                new UnsupportedCase("class C { const VALUE = ($invalid[]); }", ".consts[0].value"),
+                new UnsupportedCase("class C { function run($value = ($invalid[])) {} }", ".params[0].defaultValue"),
+                new UnsupportedCase("class C { function run() { ($invalid[]); } }", ".body.stmts[0].stmt.expression"),
+                new UnsupportedCase("interface I { const VALUE = ($invalid[]); }", ".consts[0].value"),
+                new UnsupportedCase("interface I { function run($value = ($invalid[])); }", ".params[0].defaultValue"),
+                new UnsupportedCase("trait T { public $value = ($invalid[]); }", ".props[0].defaultValue"),
+                new UnsupportedCase("trait T { function run() { ($invalid[]); } }", ".body.stmts[0].stmt.expression"))) {
             NodeTopStatement node = assertDoesNotThrow(() -> parsedTop(test.code()), test.code());
             SyntaxConversionException error = assertThrows(SyntaxConversionException.class, () -> convert(node), test.code());
             assertEquals("declarations.php", error.source().sourceId());
@@ -445,7 +445,7 @@ class NamedDeclarationConversionContractTest {
                     interface LocalInterface { function work(); }
                     return new class { function build() { class DeepClass {} } };
                 }
-                function broken() { function invalid() { return `noop`; } }
+                function broken() { function invalid() { return ($invalid[]); } }
                 """), "declarations.php");
         var section = file.namespaceSections().getFirst();
         var declarationsBefore = List.copyOf(section.declarations());

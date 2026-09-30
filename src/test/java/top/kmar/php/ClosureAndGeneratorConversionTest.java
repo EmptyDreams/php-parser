@@ -354,18 +354,18 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(inner.captures().isEmpty());
     }
 
-    // 新增外壳不吞掉未支持的子树；嵌套具名声明内部的反引号表达式也必须递归失败。
+    // 新增外壳不吞掉非法读取；嵌套具名声明内部的空下标读取也必须递归失败。
     @Test
     void rejectsUnsupportedContentsInEveryNewExpressionPosition() {
-        for (String code : List.of("function($value = (`echo sentinel`)) {}", "function() { (`echo sentinel`); }",
-                "function() { return function() { (`echo sentinel`); }; }",
-                "function() { global ${(`echo sentinel`)}; }",
-                "function() { static $value = (`echo sentinel`); }",
-                "function() { function nested() { `echo sentinel`; } }",
-                "function() { class Nested { function run() { `echo sentinel`; } } }",
-                "function() { return `echo sentinel`; }",
-                "yield (`echo sentinel`)", "yield (`echo sentinel`) => 1", "yield 1 => (`echo sentinel`)",
-                "yield from (`echo sentinel`)")) {
+        for (String code : List.of("function($value = ($invalid[])) {}", "function() { ($invalid[]); }",
+                "function() { return function() { ($invalid[]); }; }",
+                "function() { global ${($invalid[])}; }",
+                "function() { static $value = ($invalid[]); }",
+                "function() { function nested() { ($invalid[]); } }",
+                "function() { class Nested { function run() { ($invalid[]); } } }",
+                "function() { return ($invalid[]); }",
+                "yield ($invalid[])", "yield ($invalid[]) => 1", "yield 1 => ($invalid[])",
+                "yield from ($invalid[])")) {
             assertRejected(code);
         }
     }

@@ -355,11 +355,25 @@ class StringConversionTest {
         }
     }
 
-    // 插值仍使用读取上下文，未知子树和 shell 命令不会因字符串支持而被执行或忽略。
+    // 命令本身及其在动态插值名称、下标中的位置都保留为 IrShellExec，不执行或提前求值。
     @Test
-    void rejectsUnsupportedInterpolationContentsAndShellExecution() {
-        for (String code : List.of("\"{$items[]}\"", "\"${(`echo sentinel`)}\"",
-                "\"{$items[(`echo sentinel`)]}\"", Character.toString(96) + "echo hello" + Character.toString(96))) {
+    void preservesShellExpressionsInsideStringInterpolations() {
+        IrShellExec direct = assertInstanceOf(IrShellExec.class, expression("`echo hello`"));
+        assertBytes("echo hello", direct.command());
+        IrVariable indirect = assertInstanceOf(IrVariable.class,
+                interpolation(template("\"${(`echo sentinel`)}\""), 0));
+        IrComputedName name = assertInstanceOf(IrComputedName.class, indirect.name());
+        assertBytes("echo sentinel", assertInstanceOf(IrShellExec.class, name.expression()).command());
+        IrIndex indexed = assertInstanceOf(IrIndex.class,
+                interpolation(template("\"{$items[(`echo sentinel`)]}\""), 0));
+        assertVariable(indexed.base(), "items");
+        assertBytes("echo sentinel", assertInstanceOf(IrShellExec.class, indexed.index()).command());
+    }
+
+    // 插值中的名称与下标仍为读取上下文，不能因字符串外壳而接受空下标读取。
+    @Test
+    void rejectsInvalidReadContextsInsideInterpolations() {
+        for (String code : List.of("\"{$items[]}\"", "\"${($invalid[])}\"", "\"{$items[($invalid[])]}\"")) {
             assertRejected(code);
         }
     }

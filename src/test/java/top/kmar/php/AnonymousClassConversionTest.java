@@ -585,20 +585,20 @@ class AnonymousClassConversionTest {
         }
     }
 
-    // 方法默认值、主体及其嵌套具名声明继续递归拒绝反引号，不用原 AST 占位。
+    // 方法默认值、主体及其嵌套具名声明继续递归拒绝空下标读取，不用原 AST 占位。
     @Test
     void propagatesUnsupportedSubtreesFromEveryAnonymousClassContainer() {
-        String shell = Character.toString(96) + "echo hello" + Character.toString(96);
-        for (String code : List.of("new class(" + shell + ") {}",
-                "new class { public $value = " + shell + "; }",
-                "new class { const VALUE = " + shell + "; }",
-                "new class { function run($value = " + shell + ") {} }",
-                "new class { function run() { " + shell + "; } }",
-                "new class { function run() { function nested() { `echo sentinel`; } } }",
-                "new class { function run() { class Nested { function method() { `echo sentinel`; } } } }",
-                "new class { function run() { trait Nested { function method() { `echo sentinel`; } } } }",
-                "new class { function run() { interface Nested { const VALUE = `echo sentinel`; } } }",
-                "new class { public $value = function() { function nested() { `echo sentinel`; } }; }")) {
+        String invalidRead = "($invalid[])";
+        for (String code : List.of("new class(" + invalidRead + ") {}",
+                "new class { public $value = " + invalidRead + "; }",
+                "new class { const VALUE = " + invalidRead + "; }",
+                "new class { function run($value = " + invalidRead + ") {} }",
+                "new class { function run() { " + invalidRead + "; } }",
+                "new class { function run() { function nested() { ($invalid[]); } } }",
+                "new class { function run() { class Nested { function method() { ($invalid[]); } } } }",
+                "new class { function run() { trait Nested { function method() { ($invalid[]); } } } }",
+                "new class { function run() { interface Nested { const VALUE = ($invalid[]); } } }",
+                "new class { public $value = function() { function nested() { ($invalid[]); } }; }")) {
             assertRejectedExpression(code);
         }
     }

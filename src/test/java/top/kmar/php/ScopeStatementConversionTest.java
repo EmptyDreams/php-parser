@@ -363,19 +363,19 @@ class ScopeStatementConversionTest {
         assertInstanceOf(IrLabel.class, converted.statements().get(4));
     }
 
-    // 新语句的值、动态名称和三种主体均递归转换，不能吞掉嵌套具名声明内部的反引号表达式。
+    // 新语句的值、动态名称和三种主体均递归转换，不能吞掉嵌套具名声明内部的空下标读取。
     @Test
     void propagatesUnsupportedSubtreesThroughEveryNewContainer() {
         for (String code : List.of(
-                "global ${(`echo sentinel`)};",
-                "global ${function() { function nested() { `echo sentinel`; } }};",
-                "static $value = `echo sentinel`;",
-                "static $value = function() { class Nested { function run() { `echo sentinel`; } } };",
-                "declare(custom=(`echo sentinel`));",
-                "declare(custom=function() { function nested() { `echo sentinel`; } });",
-                "declare(ticks=1) (`echo sentinel`);",
-                "declare(ticks=1) { function nested() { `echo sentinel`; } }",
-                "declare(ticks=1): class Nested { function run() { `echo sentinel`; } } enddeclare;")) {
+                "global ${($invalid[])};",
+                "global ${function() { function nested() { ($invalid[]); } }};",
+                "static $value = ($invalid[]);",
+                "static $value = function() { class Nested { function run() { ($invalid[]); } } };",
+                "declare(custom=($invalid[]));",
+                "declare(custom=function() { function nested() { ($invalid[]); } });",
+                "declare(ticks=1) ($invalid[]);",
+                "declare(ticks=1) { function nested() { ($invalid[]); } }",
+                "declare(ticks=1): class Nested { function run() { ($invalid[]); } } enddeclare;")) {
             assertRejectedBody(code);
         }
     }

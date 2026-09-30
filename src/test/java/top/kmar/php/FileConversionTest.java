@@ -354,15 +354,15 @@ class FileConversionTest {
         }
     }
 
-    // 文件遍历不能吞掉任何深度的未知内容，甚至后置命名空间或第二项常量也必须失败。
+    // 文件遍历不能吞掉任何深度的不允许的读取子树，后置命名空间和第二项常量也必须失败。
     @Test
     void propagatesUnsupportedSubtreesFromEveryFileContainer() {
-        for (String code : List.of("const OK = 1, BAD = `echo sentinel`;",
-                "namespace A; echo 1; namespace B; const BAD = `echo sentinel`;",
-                "namespace A { function f($value = `echo sentinel`) {} }",
-                "namespace A { class C { function run() { return `echo sentinel`; } } }",
-                "namespace { interface I { const BAD = `echo sentinel`; } }",
-                "trait T { function f() { return function() { `echo sentinel`; }; } }")) {
+        for (String code : List.of("const OK = 1, BAD = ($invalid[]);",
+                "namespace A; echo 1; namespace B; const BAD = ($invalid[]);",
+                "namespace A { function f($value = ($invalid[])) {} }",
+                "namespace A { class C { function run() { return ($invalid[]); } } }",
+                "namespace { interface I { const BAD = ($invalid[]); } }",
+                "trait T { function f() { return function() { ($invalid[]); }; } }")) {
             NodeProgram syntax = assertDoesNotThrow(() -> parse(code), code);
             var error = assertThrows(SyntaxConversionException.class,
                     () -> SyntaxConverter.convertFile(syntax, "file.php"), code);
@@ -379,8 +379,8 @@ class FileConversionTest {
                 <?php
                 namespace App;
                 function good() { return 1; }
-                function unrelated() { `echo sentinel`; }
-                const ALSO_BAD = `echo sentinel`;
+                function unrelated() { ($invalid[]); }
+                const ALSO_BAD = ($invalid[]);
                 """);
         var extracted = DeclarationExtractor.extract(syntax, "file.php");
         FunctionDefinition good = assertInstanceOf(FunctionDefinition.class,

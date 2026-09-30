@@ -328,14 +328,12 @@ class BuiltinConversionTest {
         }
     }
 
-    // 新的外壳不掩盖尚未支持的子树，isset/empty 等读取上下文也不允许空下标。
+    // 内建结构的操作数属于读取上下文，不能吞掉空下标读取错误。
     @Test
     void rejectsUnsupportedOperandsInsideEveryBuiltinExpression() {
-        for (String code : List.of("isset((`echo sentinel`))", "empty((`echo sentinel`))", "(int) (`echo sentinel`)",
-                "@(`echo sentinel`)", "print (`echo sentinel`)", "include (`echo sentinel`)", "include_once (`echo sentinel`)",
-                "require (`echo sentinel`)", "require_once (`echo sentinel`)", "eval((`echo sentinel`))", "exit((`echo sentinel`))",
-                "isset($a[])", "empty($a[])", "(int) $a[]", "@$a[]", "print $a[]",
-                "include $a[]", "eval($a[])", "die($a[])")) {
+        for (String code : List.of("isset($a[])", "empty($a[])", "(int) $a[]", "@$a[]", "print $a[]",
+                "include $a[]", "include_once $a[]", "require $a[]", "require_once $a[]",
+                "eval($a[])", "exit($a[])", "die($a[])")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
             SyntaxConversionException error = assertThrows(SyntaxConversionException.class,
                     () -> SyntaxConverter.convertExpression(syntax), code);

@@ -13,7 +13,7 @@ import java.util.Objects;
 
 import static top.kmar.php.extract.StringLiteralDecoder.Mode;
 
-/** 字符串语法适配器；只有文本解码使用共享缓冲区，递归表达式转换发生在发布文本快照之后。 */
+/** 字符串与反引号正文适配器；只有文本解码使用共享缓冲区，递归转换发生在发布文本快照之后。 */
 final class StringConverter {
     private final ConversionContext context;
     private final ExpressionConverter expressions;
@@ -55,10 +55,17 @@ final class StringConverter {
     IrExpression scalar(NodeScalar node, String path) {
         return switch (node) {
             case NodeScalar.MagicConst ignored -> magic(node, path);
-            case NodeScalar.InterpolatedString ignored -> content(node, path, Mode.DOUBLE_QUOTED, false);
-            case NodeScalar.Heredoc ignored -> content(node, path, heredocMode(node, path), true);
+            case NodeScalar.InterpolatedString ignored -> content(node, node.getList(), path, Mode.DOUBLE_QUOTED, false);
+            case NodeScalar.Heredoc ignored -> content(node, node.getList(), path, heredocMode(node, path), true);
             default -> throw context.error(node, path, "无法识别的字符串或魔术常量结构");
         };
+    }
+
+    IrExpression command(NodeBackticksExpr node, String path) {
+        if (!(node instanceof NodeBackticksExpr.ShellExecList)) {
+            throw context.error(node, path, "无法识别的反引号命令正文");
+        }
+        return content(node, node.getList(), path, Mode.BACKTICK, false);
     }
 
     private IrMagicConstant magic(NodeScalar node, String path) {
@@ -118,8 +125,8 @@ final class StringConverter {
         return mode;
     }
 
-    private IrExpression content(NodeScalar node, String path, Mode mode, boolean heredoc) {
-        NodeEncapsList list = context.required(node.getList(), node, path + ".list");
+    private IrExpression content(AstNode node, NodeEncapsList syntax, String path, Mode mode, boolean heredoc) {
+        NodeEncapsList list = context.required(syntax, node, path + ".list");
         if (!(list instanceof NodeEncapsList.Parts)) {
             throw context.error(list, path + ".list", "无法识别的字符串片段列表");
         }

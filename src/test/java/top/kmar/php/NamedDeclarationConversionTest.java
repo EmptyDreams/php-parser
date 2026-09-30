@@ -447,11 +447,11 @@ class NamedDeclarationConversionTest {
     @Test
     void rejectsUnsupportedContentsInsideNamedDeclarations() {
         for (String code : List.of(
-                "function f($value = `echo sentinel`) {}", "function f() { return `echo sentinel`; }",
-                "class C { public $value = `echo sentinel`; }", "trait T { const X = `echo sentinel`; }",
-                "interface I { function f($value = `echo sentinel`); }",
-                "class C { function run() { function inner() { return `echo sentinel`; } } }")) {
-            SyntaxBody syntax = syntax(code);
+                "function f($value = ($invalid[])) {}", "function f() { return ($invalid[]); }",
+                "class C { public $value = ($invalid[]); }", "trait T { const X = ($invalid[]); }",
+                "interface I { function f($value = ($invalid[])); }",
+                "class C { function run() { function inner() { return ($invalid[]); } } }")) {
+            SyntaxBody syntax = assertDoesNotThrow(() -> syntax(code), code);
             var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
             assertFalse(error.fieldPath().isBlank());
             assertFalse(error.reason().isBlank());

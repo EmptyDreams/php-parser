@@ -392,7 +392,7 @@ class SyntaxConverterTest {
         PhpFile file = DeclarationExtractor.extract(Main.parse("""
                 <?php
                 function good($value = null) { return $value; }
-                function unrelated() { `echo sentinel`; }
+                function unrelated() { ($invalid[]); }
                 class C {
                     public $value = 1 + 2;
                     const NEXT = 3;
@@ -416,17 +416,27 @@ class SyntaxConverterTest {
         assertEquals(3, declarations.size());
     }
 
-    // 临时对象写根和当前子集外的表达式明确失败，不退回原始 AST 或部分转换结果。
+    // 临时对象写根和嵌套的非法读取明确失败，不退回原始 AST 或部分转换结果。
     @Test
     void rejectsUnsupportedExpressions() {
         for (String code : List.of(
                 "$a =& (new class {})->field",
-                "function () { (`echo sentinel`); }", "(`echo sentinel`)", "yield (`echo sentinel`)")) {
+                "function () { ($invalid[]); }", "yield ($invalid[])")) {
             SyntaxExpression syntax = assertDoesNotThrow(() -> syntaxExpression(code), code);
             var error = assertThrows(SyntaxConversionException.class,
                     () -> SyntaxConverter.convertExpression(syntax), code);
             assertFalse(error.fieldPath().isBlank(), code);
             assertFalse(error.reason().isBlank(), code);
+        }
+    }
+
+    // 直接和带括号的反引号均保留命令表达式，括号消解不会退化为普通调用或字符串。
+    @Test
+    void convertsDirectAndParenthesizedShellExpressions() {
+        for (String code : List.of("`echo sentinel`", "(`echo sentinel`)")) {
+            IrShellExec shell = assertInstanceOf(IrShellExec.class, expression(code));
+            assertArrayEquals("echo sentinel".getBytes(StandardCharsets.UTF_8),
+                    assertInstanceOf(IrStringLiteral.class, shell.command()).value().toByteArray());
         }
     }
 
@@ -452,15 +462,15 @@ class SyntaxConverterTest {
         assertInstanceOf(IrEmpty.class, block.statements().get(3));
     }
 
-    // 具名声明、global 或跳转外壳均递归转换内容，不能跳过内部未支持的反引号表达式。
+    // 具名声明、global 或跳转外壳均递归转换内容，不能跳过内部的空下标读取错误。
     @Test
     void rejectsUnsupportedSubtreesInsideStatementsAndNamedDeclarations() {
         for (String code : List.of(
-                "global ${(`echo sentinel`)};", "(`echo sentinel`);",
-                "function nested() { `echo sentinel`; }",
-                "class Nested { function run() { `echo sentinel`; } }",
-                "goto end; end: (`echo sentinel`);")) {
-            SyntaxBody syntax = syntaxBody(code);
+                "global ${($invalid[])};", "($invalid[]);",
+                "function nested() { ($invalid[]); }",
+                "class Nested { function run() { ($invalid[]); } }",
+                "goto end; end: ($invalid[]);")) {
+            SyntaxBody syntax = assertDoesNotThrow(() -> syntaxBody(code), code);
             assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
         }
     }

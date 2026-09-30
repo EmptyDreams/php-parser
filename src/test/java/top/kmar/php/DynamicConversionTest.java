@@ -401,14 +401,14 @@ class DynamicConversionTest {
         assertCall(assignment.value(), "rhs");
     }
 
-    // 新结构不会掩盖未支持子树；反引号表达式在任意名称、类引用或实参中都明确失败。
+    // 新结构不会掩盖非法子树；空下标读取在任意名称、类引用或实参中都明确失败。
     @Test
     void rejectsUnsupportedSubtreesInEveryNewPosition() {
-        for (String code : List.of("${(`echo sentinel`)}", "$obj->{(`echo sentinel`)}", "$obj->{(`echo sentinel`)}()",
-                "Box::${(`echo sentinel`)}", "Box::{(`echo sentinel`)}()", "((`echo sentinel`))()", "((`echo sentinel`))::run()",
-                "((`echo sentinel`))::$p", "((`echo sentinel`))::VALUE", "((`echo sentinel`))::class", "new ${(`echo sentinel`)}",
-                "$value instanceof ${(`echo sentinel`)}", "$callback((`echo sentinel`))", "$callback(...(`echo sentinel`))",
-                "$obj->$method(...(`echo sentinel`))", "$type::$method(...(`echo sentinel`))", "new $type(...(`echo sentinel`))")) {
+        for (String code : List.of("${($invalid[])}", "$obj->{($invalid[])}", "$obj->{($invalid[])}()",
+                "Box::${($invalid[])}", "Box::{($invalid[])}()", "(($invalid[]))()", "(($invalid[]))::run()",
+                "(($invalid[]))::$p", "(($invalid[]))::VALUE", "(($invalid[]))::class", "new ${($invalid[])}",
+                "$value instanceof ${($invalid[])}", "$callback(($invalid[]))", "$callback(...($invalid[]))",
+                "$obj->$method(...($invalid[]))", "$type::$method(...($invalid[]))", "new $type(...($invalid[]))")) {
             assertRejected(code);
         }
     }

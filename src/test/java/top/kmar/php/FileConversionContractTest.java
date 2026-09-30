@@ -398,10 +398,10 @@ class FileConversionContractTest {
     // 全文件遍历声明默认值与方法体，后续不支持子树不能被跳过或交付部分成功结果。
     @Test
     void propagatesUnsupportedContentsFromEveryFileBoundary() {
-        for (String code : List.of("echo 1; `noop`;", "const GOOD = 1, BAD = `noop`;",
-                "namespace App; function f($value = `noop`) {}", "namespace App { class C { public $value = `noop`; } }",
-                "namespace App { function f() { `noop`; } }", "trait T { function run() { `noop`; } }",
-                "interface I { const VALUE = `noop`; }", "namespace First; echo 1; namespace Last; `noop`;")) {
+        for (String code : List.of("echo 1; ($invalid[]);", "const GOOD = 1, BAD = ($invalid[]);",
+                "namespace App; function f($value = ($invalid[])) {}", "namespace App { class C { public $value = ($invalid[]); } }",
+                "namespace App { function f() { ($invalid[]); } }", "trait T { function run() { ($invalid[]); } }",
+                "interface I { const VALUE = ($invalid[]); }", "namespace First; echo 1; namespace Last; ($invalid[]);")) {
             AstNode root = assertDoesNotThrow(() -> Main.parse("<?php " + code), code);
             var error = assertThrows(SyntaxConversionException.class, () -> convert(root), code);
             assertTrue(error.fieldPath().startsWith("program.stmts["), error.fieldPath());
@@ -429,8 +429,8 @@ class FileConversionContractTest {
         var originalSections = List.copyOf(extracted.namespaceSections());
         var originalStatements = List.copyOf(root.getStmts().getValue());
         String before = root.toTreeString(false);
-        assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertFile(
-                Main.parse("<?php namespace Broken; const FAIL = `noop`;"), "failed.php"));
+        AstNode broken = assertDoesNotThrow(() -> Main.parse("<?php namespace Broken; const FAIL = ($invalid[]);"));
+        assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertFile(broken, "failed.php"));
         IrFile result = convert(root);
         assertEquals(result, convert(root));
         assertEquals(before, root.toTreeString(false));
