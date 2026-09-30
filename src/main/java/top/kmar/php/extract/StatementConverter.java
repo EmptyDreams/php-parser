@@ -10,6 +10,7 @@ import top.kmar.php.model.SyntaxBody;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
@@ -203,13 +204,29 @@ final class StatementConverter {
                 throw context.error(directive, directivePath, "无法识别的 declare 指令结构");
             }
             directives.add(new IrDeclareDirective(
-                    context.text(directive.getName(), directive, directivePath + ".name"),
+                    declareDirectiveKind(directive, directivePath + ".name"),
                     expressions.convert(context.required(directive.getValue(), directive, directivePath + ".value"),
                             directivePath + ".value"), context.source(directive)));
         }
         return new IrDeclare(directives,
                 declareBody(context.required(node.getDeclareBody(), node, path + ".declareBody"), path + ".declareBody"),
                 context.source(node));
+    }
+
+    private DeclareDirectiveKind declareDirectiveKind(NodeConstDecl node, String path) {
+        String spelling = context.text(node.getName(), node, path);
+        // 标准名称只使用 ASCII；Unicode 大小写映射不能将近似拼写变成标准指令。
+        for (int i = 0; i < spelling.length(); i++) {
+            if (spelling.charAt(i) > 0x7f) {
+                throw context.error(node, path, "不支持的 declare 指令: " + spelling);
+            }
+        }
+        return switch (spelling.toLowerCase(Locale.ROOT)) {
+            case "ticks" -> DeclareDirectiveKind.TICKS;
+            case "encoding" -> DeclareDirectiveKind.ENCODING;
+            case "strict_types" -> DeclareDirectiveKind.STRICT_TYPES;
+            default -> throw context.error(node, path, "不支持的 declare 指令: " + spelling);
+        };
     }
 
     private @Nullable IrBlock declareBody(NodeDeclareStatement node, String path) {

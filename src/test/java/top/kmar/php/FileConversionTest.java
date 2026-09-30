@@ -288,7 +288,7 @@ class FileConversionTest {
         assertEquals(3, statements.size());
         IrDeclare declare = assertInstanceOf(IrDeclare.class, statements.getFirst());
         assertNull(declare.body());
-        assertEquals("strict_types", declare.directives().getFirst().name());
+        assertEquals(DeclareDirectiveKind.STRICT_TYPES, declare.directives().getFirst().kind());
         assertInteger(declare.directives().getFirst().value(), 1);
         IrCall define = assertCall(assertInstanceOf(IrExpressionStatement.class, statements.get(1)).expression(), "define");
         assertEquals(2, define.arguments().size());

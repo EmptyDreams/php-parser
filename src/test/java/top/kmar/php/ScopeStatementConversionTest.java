@@ -1,14 +1,17 @@
 package top.kmar.php;
 
+import java_cup.runtime.symbol.complex.ComplexLocation;
 import org.junit.jupiter.api.Test;
 import top.kmar.php.extract.SyntaxConversionException;
 import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.SourceInfo;
+import top.kmar.php.model.SourceRange;
 import top.kmar.php.model.SyntaxBody;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -183,12 +186,13 @@ class ScopeStatementConversionTest {
         assertEcho(converted.statements().get(1), 6);
     }
 
-    // 多指令按源码顺序保存，不合并重复项、不规范化拼写，也不丢弃未知指令。
+    // 标准指令归一为枚举，但仍按源码顺序保留每一项和重复项，不合并对应的值。
     @Test
-    void preservesDirectiveOrderDuplicatesUnknownNamesAndSpelling() {
-        IrDeclare declaration = declaration("declare(TiCkS=1, custom='on', TiCkS=2, ticks=3, CUSTOM=false);");
-        assertEquals(List.of("TiCkS", "custom", "TiCkS", "ticks", "CUSTOM"),
-                declaration.directives().stream().map(IrDeclareDirective::name).toList());
+    void preservesDirectiveOrderAndDuplicatesAfterNormalizingKinds() {
+        IrDeclare declaration = declaration("declare(TiCkS=1, encoding='on', TiCkS=2, ticks=3, STRICT_TYPES=false);");
+        assertEquals(List.of(DeclareDirectiveKind.TICKS, DeclareDirectiveKind.ENCODING,
+                        DeclareDirectiveKind.TICKS, DeclareDirectiveKind.TICKS, DeclareDirectiveKind.STRICT_TYPES),
+                declaration.directives().stream().map(IrDeclareDirective::kind).toList());
         assertInteger(declaration.directives().get(0).value(), 1);
         assertArrayEquals("on".getBytes(StandardCharsets.UTF_8),
                 assertInstanceOf(IrStringLiteral.class, declaration.directives().get(1).value())
@@ -198,12 +202,46 @@ class ScopeStatementConversionTest {
         assertFalse(assertInstanceOf(IrBooleanLiteral.class, declaration.directives().get(4).value()).value());
     }
 
+    // 三种指令接受 ASCII 大小写变化，公开模型不再要求调用方重新比较名称字符串。
+    @Test
+    void normalizesAllStandardDirectiveKindsAcrossAsciiCaseVariants() {
+        Map.of("ticks", DeclareDirectiveKind.TICKS, "TICKS", DeclareDirectiveKind.TICKS,
+                "TiCkS", DeclareDirectiveKind.TICKS, "encoding", DeclareDirectiveKind.ENCODING,
+                "ENCODING", DeclareDirectiveKind.ENCODING, "EnCoDiNg", DeclareDirectiveKind.ENCODING,
+                "strict_types", DeclareDirectiveKind.STRICT_TYPES, "STRICT_TYPES", DeclareDirectiveKind.STRICT_TYPES,
+                "StRiCt_TyPeS", DeclareDirectiveKind.STRICT_TYPES).forEach((spelling, kind) -> {
+            IrDeclare statement = declaration("declare(" + spelling + "=1);");
+            assertEquals(1, statement.directives().size(), spelling);
+            assertEquals(kind, statement.directives().getFirst().kind(), spelling);
+            assertInteger(statement.directives().getFirst().value(), 1);
+        });
+    }
+
+    // 文法接受的未知名称与非 ASCII 近似拼写在名称处失败，诊断来源取对应指令项。
+    @Test
+    void rejectsUnknownDirectiveNamesWithTheirOriginalItemSource() {
+        for (String name : List.of("custom", "unknown", "tick", "strict_type", "ticks_extra", "encoding1",
+                "tıcks", "ticKs", "encodİng", "ſtrict_types")) {
+            String code = "declare(ticks=1, " + name + "=nextValue());";
+            SyntaxBody syntax = assertDoesNotThrow(() -> syntaxBody(code), code);
+            NodeInnerStatement wrapper = assertInstanceOf(NodeInnerStatement.class, syntax.statements().getFirst());
+            NodeConstDecl directive = wrapper.getStmt().getDirectives().getValue().get(1);
+            ComplexLocation location = directive.getLocation();
+            var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
+            assertEquals("scope.php", error.source().sourceId(), code);
+            assertTrue(error.fieldPath().endsWith(".directives[1].name"), error.fieldPath());
+            assertEquals(new SourceRange(location.getStartLine(), location.getStartColumn(),
+                    location.getEndLine(), location.getEndColumn()), error.source().range(), code);
+            assertFalse(error.reason().isBlank(), code);
+        }
+    }
+
     // 指令值按普通表达式保存，既不执行调用，也不要求值已经是 PHP 字面量。
     @Test
     void preservesGeneralExpressionsInsideDeclareDirectives() {
         IrDeclare declaration = declaration("""
-                declare(first=nextValue(), second=$value, third=1 + 2, fourth=[null],
-                        fifth=$items[] = nextValue(), sixth=function() { static $count = 1; });
+                declare(ticks=nextValue(), encoding=$value, strict_types=1 + 2, ticks=[null],
+                        encoding=$items[] = nextValue(), strict_types=function() { static $count = 1; });
                 """);
         assertEquals(6, declaration.directives().size());
         assertCall(declaration.directives().get(0).value(), "nextValue");
@@ -228,21 +266,24 @@ class ScopeStatementConversionTest {
         assertEquals(4, converted.statements().size());
         assertEcho(converted.statements().get(0), 1);
         IrDeclare strict = assertInstanceOf(IrDeclare.class, converted.statements().get(1));
-        assertEquals("STRICT_TYPES", strict.directives().getFirst().name());
+        assertEquals(DeclareDirectiveKind.STRICT_TYPES, strict.directives().getFirst().kind());
         assertInteger(strict.directives().getFirst().value(), 3);
         assertNotNull(strict.body());
         assertTrue(strict.body().statements().isEmpty());
         IrDeclare encoding = assertInstanceOf(IrDeclare.class, converted.statements().get(2));
+        assertEquals(DeclareDirectiveKind.ENCODING, encoding.directives().getFirst().kind());
         assertVariable(encoding.directives().getFirst().value(), "encoding");
         assertNotNull(encoding.body());
         assertEcho(encoding.body().statements().getFirst(), 2);
-        assertNull(assertInstanceOf(IrDeclare.class, converted.statements().get(3)).body());
+        IrDeclare ticks = assertInstanceOf(IrDeclare.class, converted.statements().get(3));
+        assertEquals(DeclareDirectiveKind.TICKS, ticks.directives().getFirst().kind());
+        assertNull(ticks.body());
     }
 
     // 指令表达式和主体中的读取错误继续向外传播，不把追加读取误当可写目标。
     @Test
     void rejectsAppendReadsInsideDeclareValuesAndBodies() {
-        for (String code : List.of("declare(ticks=$items[]);", "declare(custom=nextValue($items[]));",
+        for (String code : List.of("declare(ticks=$items[]);", "declare(encoding=nextValue($items[]));",
                 "declare(ticks=1) echo $items[];", "declare(ticks=1): echo $items[]; enddeclare;")) {
             assertRejectedBody(code);
         }
@@ -318,7 +359,7 @@ class ScopeStatementConversionTest {
                 if ($condition): global $conditional; else: static $fallback; endif;
                 foreach ($items as &$item) { global $shared; static $index = 0; }
                 try { static $attempt = 1; }
-                catch (Exception $error) { declare(custom=1); }
+                catch (Exception $error) { declare(encoding=1); }
                 finally { goto Done; Done: ; }
                 switch ($value) { default: declare(ticks=1) global $selected; }
                 """);
@@ -368,8 +409,8 @@ class ScopeStatementConversionTest {
                 "global ${function() { function nested() { ($invalid[]); } }};",
                 "static $value = ($invalid[]);",
                 "static $value = function() { class Nested { function run() { ($invalid[]); } } };",
-                "declare(custom=($invalid[]));",
-                "declare(custom=function() { function nested() { ($invalid[]); } });",
+                "declare(ticks=($invalid[]));",
+                "declare(encoding=function() { function nested() { ($invalid[]); } });",
                 "declare(ticks=1) ($invalid[]);",
                 "declare(ticks=1) { function nested() { ($invalid[]); } }",
                 "declare(ticks=1): class Nested { function run() { ($invalid[]); } } enddeclare;")) {

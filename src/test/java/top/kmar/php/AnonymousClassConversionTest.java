@@ -466,7 +466,7 @@ class AnonymousClassConversionTest {
         IrBlock body = SyntaxConverter.convertBody(syntaxBody("""
                 global ${(new class {})};
                 static $value = new class {};
-                declare(custom=new class {}) echo new class {};
+                declare(encoding=new class {}) echo new class {};
                 switch (new class {}) { case new class {}: echo new class {}; }
                 try { throw new class {}; }
                 catch (Exception $error) { return new class {}; }

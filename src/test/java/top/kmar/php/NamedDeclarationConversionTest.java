@@ -321,7 +321,7 @@ class NamedDeclarationConversionTest {
             assertEquals("memo", memo.name());
             assertBytes(memo.initializer(), "A\nB");
             IrDeclare declare = assertInstanceOf(IrDeclare.class, block.statements().get(2));
-            assertEquals("ticks", declare.directives().getFirst().name());
+            assertEquals(DeclareDirectiveKind.TICKS, declare.directives().getFirst().kind());
             assertInteger(declare.directives().getFirst().value(), 1);
             assertNotNull(declare.body());
             assertEquals("done", assertInstanceOf(IrGoto.class, declare.body().statements().getFirst()).label());

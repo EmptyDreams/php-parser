@@ -163,9 +163,9 @@ class ScopeStatementConversionContractTest {
         }
     }
 
-    // 初始化和指令表达式按普通 IR 转换，不限制编译期常量或已知指令白名单。
+    // 初始化和已知指令的值按普通 IR 转换，不限制编译期常量；重复指令不合并。
     @Test
-    void preservesNonconstantInitializersAndUnrecognizedDirectiveNames() {
+    void preservesNonconstantInitializersAndRepeatedKnownDirectives() {
         var initializer = variableExpression("seed", VALUE);
         IrStaticVariables variables = assertInstanceOf(IrStaticVariables.class, convert(statics(
                 new NodeStaticVar.StaticVarWithDefault(token("Value", LEAF), initializer, ENTRY), staticVariable("Value"))));
@@ -174,9 +174,10 @@ class ScopeStatementConversionContractTest {
         assertEquals("Value", variables.variables().getFirst().name());
         assertEquals("Value", variables.variables().get(1).name());
         IrDeclare declaration = assertInstanceOf(IrDeclare.class, convert(declare(semicolonBody(),
-                new NodeConstDecl.ConstDecl(token("Custom", LEAF), initializer, ENTRY),
-                new NodeConstDecl.ConstDecl(token("custom", LEAF), initializer, ENTRY))));
-        assertEquals(List.of("Custom", "custom"), declaration.directives().stream().map(IrDeclareDirective::name).toList());
+                new NodeConstDecl.ConstDecl(token("TiCkS", LEAF), initializer, ENTRY),
+                new NodeConstDecl.ConstDecl(token("ticks", LEAF), initializer, ENTRY))));
+        assertEquals(List.of(DeclareDirectiveKind.TICKS, DeclareDirectiveKind.TICKS),
+                declaration.directives().stream().map(IrDeclareDirective::kind).toList());
         assertInstanceOf(IrVariable.class, declaration.directives().getFirst().value());
     }
 
@@ -187,7 +188,7 @@ class ScopeStatementConversionContractTest {
         assertFailure(globals(new NodeSimpleVariable.IndirectVar(unsupported, ENTRY)), ".globalVars[0].e", false);
         assertFailure(statics(new NodeStaticVar.StaticVarWithDefault(token("value", LEAF), unsupported, ENTRY)),
                 ".staticVars[0].defaultValue", false);
-        assertFailure(declare(semicolonBody(), new NodeConstDecl.ConstDecl(token("custom", LEAF), unsupported, ENTRY)),
+        assertFailure(declare(semicolonBody(), new NodeConstDecl.ConstDecl(token("ticks", LEAF), unsupported, ENTRY)),
                 ".directives[0].value", false);
         NodeStatement expression = new NodeStatement.ExpressionStatement(unsupported, LEAF);
         assertFailure(declare(new NodeDeclareStatement.Body(expression, BODY), directive("ticks")),
@@ -201,15 +202,15 @@ class ScopeStatementConversionContractTest {
     void validatesRequiredScopeModelFields() {
         IrVariableTarget target = irTarget("value");
         IrStaticVariable variable = new IrStaticVariable("value", null, SOURCE);
-        IrDeclareDirective directive = new IrDeclareDirective("ticks", new IrIntegerLiteral(1, SOURCE), SOURCE);
+        IrDeclareDirective directive = new IrDeclareDirective(DeclareDirectiveKind.TICKS, new IrIntegerLiteral(1, SOURCE), SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrGlobal(null, SOURCE), () -> new IrGlobal(List.of(target), null),
                 () -> new IrStaticVariables(null, SOURCE), () -> new IrStaticVariables(List.of(variable), null),
                 () -> new IrStaticVariable(null, null, SOURCE), () -> new IrStaticVariable("value", null, null),
                 () -> new IrDeclare(null, null, SOURCE), () -> new IrDeclare(List.of(directive), null, null),
                 () -> new IrDeclareDirective(null, directive.value(), SOURCE),
-                () -> new IrDeclareDirective("ticks", null, SOURCE),
-                () -> new IrDeclareDirective("ticks", directive.value(), null),
+                () -> new IrDeclareDirective(DeclareDirectiveKind.TICKS, null, SOURCE),
+                () -> new IrDeclareDirective(DeclareDirectiveKind.TICKS, directive.value(), null),
                 () -> new IrGoto(null, SOURCE), () -> new IrGoto("target", null),
                 () -> new IrLabel(null, SOURCE), () -> new IrLabel("target", null))) {
             assertThrows(NullPointerException.class, constructor);
@@ -218,16 +219,15 @@ class ScopeStatementConversionContractTest {
         assertNull(new IrDeclare(List.of(directive), null, SOURCE).body());
     }
 
-    // 声明列表至少有一项且无 null 元素，名称不能是空字符串；不额外规范化非空名称。
+    // 声明列表至少有一项且无 null 元素；变量及跳转名称保持原样，指令只保存枚举种类。
     @Test
     void validatesNonemptyListsAndNamesWithoutNormalization() {
         IrVariableTarget target = irTarget("value");
         IrStaticVariable variable = new IrStaticVariable("value", null, SOURCE);
-        IrDeclareDirective directive = new IrDeclareDirective("ticks", new IrIntegerLiteral(1, SOURCE), SOURCE);
+        IrDeclareDirective directive = new IrDeclareDirective(DeclareDirectiveKind.TICKS, new IrIntegerLiteral(1, SOURCE), SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrGlobal(List.of(), SOURCE), () -> new IrStaticVariables(List.of(), SOURCE),
                 () -> new IrDeclare(List.of(), null, SOURCE), () -> new IrStaticVariable("", null, SOURCE),
-                () -> new IrDeclareDirective("", directive.value(), SOURCE),
                 () -> new IrGoto("", SOURCE), () -> new IrLabel("", SOURCE))) {
             assertThrows(IllegalArgumentException.class, constructor);
         }
@@ -238,7 +238,8 @@ class ScopeStatementConversionContractTest {
             assertThrows(NullPointerException.class, constructor);
         }
         assertEquals("Value", new IrStaticVariable("Value", null, SOURCE).name());
-        assertEquals("CUSTOM", new IrDeclareDirective("CUSTOM", directive.value(), SOURCE).name());
+        assertEquals(DeclareDirectiveKind.STRICT_TYPES,
+                new IrDeclareDirective(DeclareDirectiveKind.STRICT_TYPES, directive.value(), SOURCE).kind());
         assertEquals("Target", new IrGoto("Target", SOURCE).label());
         assertEquals("Target", new IrLabel("Target", SOURCE).name());
     }
@@ -260,7 +261,7 @@ class ScopeStatementConversionContractTest {
         assertEquals(List.of(staticItem, staticItem), statics.variables());
         assertThrows(UnsupportedOperationException.class, statics.variables()::clear);
 
-        var directive = new IrDeclareDirective("ticks", new IrIntegerLiteral(1, SOURCE), SOURCE);
+        var directive = new IrDeclareDirective(DeclareDirectiveKind.TICKS, new IrIntegerLiteral(1, SOURCE), SOURCE);
         var directiveItems = new ArrayList<>(List.of(directive, directive));
         var declaration = new IrDeclare(directiveItems, null, SOURCE);
         directiveItems.clear();
@@ -342,7 +343,7 @@ class ScopeStatementConversionContractTest {
                 function scope($name) {
                     global $value, $$name, ${"global_" . $name};
                     static $counter = 0, $text = "scope", $counter = null;
-                    declare(Custom = $value) { goto Finish; Finish: ; }
+                    declare(TiCkS = $value) { goto Finish; Finish: ; }
                     declare(ticks = 1);
                 }
                 function unsupported() { static $value = ($invalid[]); }
