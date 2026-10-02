@@ -1,25 +1,33 @@
 package top.kmar.php.extract;
 
 import java_cup.runtime.AstNode;
+import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
-import top.kmar.php.model.ImportDeclaration;
 import top.kmar.php.model.ImportKind;
+import top.kmar.php.model.SourceInfo;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 
-/** 只读取 namespace 的 use，不处理 trait 使用或闭包捕获。 */
-final class ImportReader {
-    private final AstReaderContext context;
-
-    ImportReader(AstReaderContext context) {
-        this.context = Objects.requireNonNull(context, "context");
+/** 只读取 namespace 的 use，通过工厂直接构造各阶段模型，不处理 trait 使用或闭包捕获。 */
+final class ImportReader<T> {
+    @FunctionalInterface
+    interface Factory<T> {
+        T create(ImportKind kind, String targetName, @Nullable String declaredAlias, SourceInfo source);
     }
 
-    List<ImportDeclaration> read(NodeTopStatement statement, String path) {
-        var result = new ArrayList<ImportDeclaration>();
+    private final AstReaderContext context;
+    private final Factory<T> factory;
+
+    ImportReader(AstReaderContext context, Factory<T> factory) {
+        this.context = Objects.requireNonNull(context, "context");
+        this.factory = Objects.requireNonNull(factory, "factory");
+    }
+
+    List<T> read(NodeTopStatement statement, String path) {
+        var result = new ArrayList<T>();
         if (statement instanceof NodeTopStatement.Use || statement instanceof NodeTopStatement.UseTyped) {
             ImportKind kind = statement instanceof NodeTopStatement.UseTyped
                     ? kind(context.required(statement.getType(), statement, path + ".type"), path + ".type")
@@ -86,8 +94,8 @@ final class ImportReader {
         return List.copyOf(result);
     }
 
-    private ImportDeclaration item(ImportKind kind, String prefix, NodeUnprefixedUseDeclaration node,
-                                   AstNode origin, String path) {
+    private T item(ImportKind kind, String prefix, NodeUnprefixedUseDeclaration node,
+                   AstNode origin, String path) {
         String alias;
         if (node instanceof NodeUnprefixedUseDeclaration.UseElemAs) {
             alias = context.text(node.getAlias(), node, path + ".alias");
@@ -99,7 +107,12 @@ final class ImportReader {
         String suffix = context.namespaceName(context.required(node.getN(), node, path + ".n"), path + ".n");
         // PHP 导入目标始终是全限定名称，不受当前 namespace 影响。
         String name = prefix.isEmpty() ? suffix : prefix + "\\" + suffix;
-        return new ImportDeclaration(kind, name, alias, context.source(origin));
+        try {
+            return factory.create(kind, name, alias, context.source(origin));
+        } catch (IllegalArgumentException exception) {
+            // IR 的缺省别名必须非空；损坏目标不能泄露模型构造异常或返回部分结果。
+            throw context.error(node, path + ".n", exception.getMessage());
+        }
     }
 
     private ImportKind kind(NodeUseType node, String path) {
@@ -115,7 +128,7 @@ final class ImportReader {
         return kind;
     }
 
-    private <T> List<T> nonEmpty(List<T> values, AstNode node, String path) {
+    private <E> List<E> nonEmpty(List<E> values, AstNode node, String path) {
         context.elements(values, node, path);
         if (values.isEmpty()) throw context.error(node, path, "导入列表至少需要一项");
         return values;

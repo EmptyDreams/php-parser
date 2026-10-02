@@ -4,6 +4,7 @@ import top.kmar.php.NodeConstDecl;
 import top.kmar.php.NodeTopStatement;
 import top.kmar.php.ir.IrConstantDeclaration;
 import top.kmar.php.ir.IrHaltCompiler;
+import top.kmar.php.ir.IrImport;
 import top.kmar.php.ir.IrUse;
 
 import java.util.ArrayList;
@@ -25,7 +26,10 @@ final class TopLevelStatementConverter {
     }
 
     IrUse use(NodeTopStatement node, String path) {
-        return new IrUse(new ImportReader(context).read(node, path), context.source(node));
+        var imports = new ImportReader<>(context, (kind, target, declaredAlias, source) ->
+                new IrImport(kind, target, declaredAlias != null ? declaredAlias
+                        : target.substring(target.lastIndexOf('\\') + 1), source));
+        return new IrUse(imports.read(node, path), context.source(node));
     }
 
     List<IrConstantDeclaration> constants(NodeTopStatement.Const node, String path) {

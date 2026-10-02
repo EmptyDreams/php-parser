@@ -50,9 +50,9 @@ class FileConversionTest {
         assertEquals(2, first.size());
         assertEquals(2, second.size());
         assertImport(assertInstanceOf(IrUse.class, first.getFirst()).imports().getFirst(),
-                ImportKind.CLASS, "First\\Item", "Shared", "Shared");
+                ImportKind.CLASS, "First\\Item", "Shared");
         assertImport(assertInstanceOf(IrUse.class, second.getFirst()).imports().getFirst(),
-                ImportKind.CLASS, "Second\\Item", "Shared", "Shared");
+                ImportKind.CLASS, "Second\\Item", "Shared");
         assertEquals("first", assertInstanceOf(IrFunctionDeclaration.class, first.get(1)).name());
         assertEquals("second", assertInstanceOf(IrFunctionDeclaration.class, second.get(1)).name());
         assertTrue(statements(file, 2).isEmpty());
@@ -117,18 +117,18 @@ class FileConversionTest {
                 use const G\\THREE, \\G\\FOUR as Four;
                 """), 0);
         assertEquals(3, statements.size());
-        List<ImportDeclaration> classes = assertInstanceOf(IrUse.class, statements.getFirst()).imports();
-        List<ImportDeclaration> functions = assertInstanceOf(IrUse.class, statements.get(1)).imports();
-        List<ImportDeclaration> constants = assertInstanceOf(IrUse.class, statements.get(2)).imports();
+        List<IrImport> classes = assertInstanceOf(IrUse.class, statements.getFirst()).imports();
+        List<IrImport> functions = assertInstanceOf(IrUse.class, statements.get(1)).imports();
+        List<IrImport> constants = assertInstanceOf(IrUse.class, statements.get(2)).imports();
         assertEquals(2, classes.size());
         assertEquals(2, functions.size());
         assertEquals(2, constants.size());
-        assertImport(classes.getFirst(), ImportKind.CLASS, "A\\B", null, "B");
-        assertImport(classes.get(1), ImportKind.CLASS, "C\\D", "Alias", "Alias");
-        assertImport(functions.getFirst(), ImportKind.FUNCTION, "F\\one", null, "one");
-        assertImport(functions.get(1), ImportKind.FUNCTION, "F\\two", "Two", "Two");
-        assertImport(constants.getFirst(), ImportKind.CONST, "G\\THREE", null, "THREE");
-        assertImport(constants.get(1), ImportKind.CONST, "G\\FOUR", "Four", "Four");
+        assertImport(classes.getFirst(), ImportKind.CLASS, "A\\B", "B");
+        assertImport(classes.get(1), ImportKind.CLASS, "C\\D", "Alias");
+        assertImport(functions.getFirst(), ImportKind.FUNCTION, "F\\one", "one");
+        assertImport(functions.get(1), ImportKind.FUNCTION, "F\\two", "Two");
+        assertImport(constants.getFirst(), ImportKind.CONST, "G\\THREE", "THREE");
+        assertImport(constants.get(1), ImportKind.CONST, "G\\FOUR", "Four");
     }
 
     // 分组在一条 IrUse 内展开，混合类别、组级类别、绝对前缀与尾随逗号均按原顺序处理。
@@ -144,17 +144,17 @@ class FileConversionTest {
         assertEquals(5, statements.size());
         List<IrUse> uses = statements.stream().map(value -> assertInstanceOf(IrUse.class, value)).toList();
         assertEquals(List.of(6, 3, 2, 2, 2), uses.stream().map(value -> value.imports().size()).toList());
-        List<ImportDeclaration> imports = uses.stream().flatMap(value -> value.imports().stream()).toList();
+        List<IrImport> imports = uses.stream().flatMap(value -> value.imports().stream()).toList();
         assertEquals(List.of("P\\C", "P\\D", "P\\f", "P\\g", "P\\K", "P\\L", "Q\\Sub\\Clazz",
                 "Q\\Sub\\run", "Q\\Sub\\VALUE", "R\\f", "R\\sub\\g", "S\\K", "S\\sub\\L",
-                "Plain\\One", "Plain\\Two"), imports.stream().map(ImportDeclaration::targetName).toList());
+                "Plain\\One", "Plain\\Two"), imports.stream().map(IrImport::targetName).toList());
         assertEquals(List.of(ImportKind.CLASS, ImportKind.CLASS, ImportKind.FUNCTION, ImportKind.FUNCTION,
                 ImportKind.CONST, ImportKind.CONST, ImportKind.CLASS, ImportKind.FUNCTION, ImportKind.CONST,
                 ImportKind.FUNCTION, ImportKind.FUNCTION, ImportKind.CONST, ImportKind.CONST,
-                ImportKind.CLASS, ImportKind.CLASS), imports.stream().map(ImportDeclaration::kind).toList());
-        assertImport(imports.get(6), ImportKind.CLASS, "Q\\Sub\\Clazz", "SC", "SC");
-        assertImport(imports.get(10), ImportKind.FUNCTION, "R\\sub\\g", "rg", "rg");
-        assertImport(imports.get(12), ImportKind.CONST, "S\\sub\\L", "sl", "sl");
+                ImportKind.CLASS, ImportKind.CLASS), imports.stream().map(IrImport::kind).toList());
+        assertImport(imports.get(6), ImportKind.CLASS, "Q\\Sub\\Clazz", "SC");
+        assertImport(imports.get(10), ImportKind.FUNCTION, "R\\sub\\g", "rg");
+        assertImport(imports.get(12), ImportKind.CONST, "S\\sub\\L", "sl");
     }
 
     // use 不提升到区段表，多项 const 原位展平且没有合成块，重复导入和声明仍全部保留。
@@ -173,8 +173,8 @@ class FileConversionTest {
         assertEcho(statements.getFirst(), 0);
         IrUse firstUse = assertInstanceOf(IrUse.class, statements.get(1));
         assertEquals(2, firstUse.imports().size());
-        for (ImportDeclaration item : firstUse.imports()) {
-            assertImport(item, ImportKind.CLASS, "Vendor\\Item", "Item", "Item");
+        for (IrImport item : firstUse.imports()) {
+            assertImport(item, ImportKind.CLASS, "Vendor\\Item", "Item");
         }
         for (int i = 2; i <= 3; i++) {
             IrConstantDeclaration constant = assertInstanceOf(IrConstantDeclaration.class, statements.get(i));
@@ -433,12 +433,10 @@ class FileConversionTest {
         return file.namespaceSections().get(section).body().statements();
     }
 
-    private static void assertImport(ImportDeclaration actual, ImportKind kind, String target,
-                                     String declaredAlias, String effectiveAlias) {
+    private static void assertImport(IrImport actual, ImportKind kind, String target, String alias) {
         assertEquals(kind, actual.kind());
         assertEquals(target, actual.targetName());
-        assertEquals(declaredAlias, actual.declaredAlias());
-        assertEquals(effectiveAlias, actual.alias());
+        assertEquals(alias, actual.alias());
     }
 
     private static void assertInteger(IrExpression expression, long value) {

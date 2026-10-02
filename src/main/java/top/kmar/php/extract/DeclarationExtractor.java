@@ -32,13 +32,13 @@ public final class DeclarationExtractor {
     private static final class Worker {
         private final ExtractionContext context;
         private final DeclarationReader declarations;
-        private final ImportReader imports;
+        private final ImportReader<ImportDeclaration> imports;
         private int nextSectionId = 1;
 
         private Worker(ExtractionContext context) {
             this.context = context;
             declarations = new DeclarationReader(context);
-            imports = new ImportReader(context);
+            imports = new ImportReader<>(context, ImportDeclaration::new);
         }
 
         private List<NamespaceSection> read(List<SyntaxNamespaceSection> sections) {

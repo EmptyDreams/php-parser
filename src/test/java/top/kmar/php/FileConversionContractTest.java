@@ -137,6 +137,35 @@ class FileConversionContractTest {
         }
     }
 
+    // 推导别名为空时仅 IR 拒绝，诊断指向导入元素的名称，不能借用外层 use 包装来源。
+    @Test
+    void rejectsEmptyInferredAliasesWithImportElementOrigins() {
+        NodeUnprefixedUseDeclaration broken = new NodeUnprefixedUseDeclaration.UseElem(namespace("Bad\\"), LEAF);
+        record InvalidImport(NodeTopStatement statement, String suffix, String targetName) {}
+        for (InvalidImport invalid : List.of(
+                new InvalidImport(ordinary(new NodeUseDeclaration.UseDecl(broken, ITEM)),
+                        ".uses[0].use.n", "Bad\\"),
+                new InvalidImport(new NodeTopStatement.UseGroup(functionType(), group(elements(broken)), GROUP),
+                        ".use.uses[0].n", "Vendor\\Bad\\"))) {
+            NodeProgram root = program(List.of(invalid.statement()));
+            SyntaxConversionException fileError = assertThrows(SyntaxConversionException.class, () -> convert(root));
+            assertEquals("program.stmts[0]" + invalid.suffix(), fileError.fieldPath());
+            assertSource(LEAF, fileError.source());
+            assertDiagnostic(fileError);
+            SyntaxConversionException bodyError = assertThrows(SyntaxConversionException.class,
+                    () -> convertBody(invalid.statement()));
+            assertEquals("body.statements[0]" + invalid.suffix(), bodyError.fieldPath());
+            assertSource(LEAF, bodyError.source());
+            assertDiagnostic(bodyError);
+
+            ImportDeclaration extracted = assertDoesNotThrow(() -> DeclarationExtractor.extract(root, SOURCE.sourceId()))
+                    .namespaceSections().getFirst().imports().getFirst();
+            assertEquals(invalid.targetName(), extracted.targetName());
+            assertNull(extracted.declaredAlias());
+            assertEquals("", extracted.alias());
+        }
+    }
+
     // function/const 类型不能仅凭关键字非空判定，未知变体及与类型不匹配的标记都失败。
     @Test
     void rejectsMalformedImportTypeMarkers() {
@@ -341,9 +370,11 @@ class FileConversionContractTest {
         assertEquals(List.of("", "Same", "Same", "Block", "", "", "EmptySection"),
                 result.namespaceSections().stream().map(IrNamespaceSection::namespaceName).toList());
         for (int i = 0; i < extracted.namespaceSections().size(); i++) {
-            List<ImportDeclaration> imports = result.namespaceSections().get(i).body().statements().stream()
+            List<IrImport> imports = result.namespaceSections().get(i).body().statements().stream()
                     .filter(IrUse.class::isInstance).map(IrUse.class::cast).flatMap(use -> use.imports().stream()).toList();
-            assertEquals(extracted.namespaceSections().get(i).imports(), imports);
+            var expectedImports = extracted.namespaceSections().get(i).imports().stream()
+                    .map(item -> new IrImport(item.kind(), item.targetName(), item.alias(), item.source())).toList();
+            assertEquals(expectedImports, imports);
         }
     }
 
@@ -352,7 +383,7 @@ class FileConversionContractTest {
     void validatesRequiredFileModelFieldsAndNonemptyLists() {
         IrBlock body = new IrBlock(List.of(), SOURCE);
         IrNamespaceSection section = new IrNamespaceSection("", body, SOURCE);
-        ImportDeclaration item = new ImportDeclaration(ImportKind.CLASS, "Thing", null, SOURCE);
+        IrImport item = new IrImport(ImportKind.CLASS, "Thing", "Thing", SOURCE);
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrFile(null, SOURCE), () -> new IrFile(List.of(section), null),
@@ -361,12 +392,22 @@ class FileConversionContractTest {
                 () -> new IrUse(List.of(item), null), () -> new IrConstantDeclaration(null, value, SOURCE),
                 () -> new IrConstantDeclaration("VALUE", null, SOURCE), () -> new IrConstantDeclaration("VALUE", value, null),
                 () -> new IrHaltCompiler(null), () -> new IrFile(Arrays.asList(section, null), SOURCE),
-                () -> new IrUse(Arrays.asList(item, null), SOURCE))) {
+                () -> new IrUse(Arrays.asList(item, null), SOURCE),
+                () -> new IrImport(null, "Thing", "Thing", SOURCE),
+                () -> new IrImport(ImportKind.CLASS, null, "Thing", SOURCE),
+                () -> new IrImport(ImportKind.CLASS, "Thing", null, SOURCE),
+                () -> new IrImport(ImportKind.CLASS, "Thing", "Thing", null))) {
             assertThrows(NullPointerException.class, constructor);
         }
         assertThrows(IllegalArgumentException.class, () -> new IrFile(List.of(), SOURCE));
         assertThrows(IllegalArgumentException.class, () -> new IrUse(List.of(), SOURCE));
         assertThrows(IllegalArgumentException.class, () -> new IrConstantDeclaration("", value, SOURCE));
+        assertThrows(IllegalArgumentException.class, () -> new IrImport(ImportKind.CLASS, "", "Alias", SOURCE));
+        assertThrows(IllegalArgumentException.class, () -> new IrImport(ImportKind.CLASS, "Thing", "", SOURCE));
+        assertEquals(List.of("kind", "targetName", "alias", "source"),
+                Arrays.stream(IrImport.class.getRecordComponents()).map(RecordComponent::getName).toList());
+        assertEquals(List.of(ImportKind.class, String.class, String.class, SourceInfo.class),
+                Arrays.stream(IrImport.class.getRecordComponents()).map(RecordComponent::getType).toList());
         assertEquals("", section.namespaceName());
         assertTrue(section.body().statements().isEmpty());
     }
@@ -374,7 +415,7 @@ class FileConversionContractTest {
     // 新列表防御性复制，区段和导入重复项保留，结果中的正文列表也保持只读。
     @Test
     void snapshotsAndFreezesFileAndImportCollections() {
-        ImportDeclaration item = new ImportDeclaration(ImportKind.CLASS, "Thing", "Alias", SOURCE);
+        IrImport item = new IrImport(ImportKind.CLASS, "Thing", "Alias", SOURCE);
         var imports = new ArrayList<>(List.of(item, item));
         IrUse use = new IrUse(imports, SOURCE);
         var statements = new ArrayList<IrStatement>(List.of(use));
