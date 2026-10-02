@@ -25,7 +25,7 @@ final class AnonymousClassConverter {
                         path + ".extendsFrom"),
                 inheritance.interfaces(context.required(node.getImplementsList(), node, path + ".implementsList"),
                         path + ".implementsList"),
-                new ClassMemberConverter(context, expressions).convert(
+                new ClassMemberConverter(context, expressions, false).convert(
                         context.required(node.getMembers(), node, path + ".members"), path + ".members"),
                 context.source(node));
     }

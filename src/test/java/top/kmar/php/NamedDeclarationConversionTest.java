@@ -28,7 +28,8 @@ class NamedDeclarationConversionTest {
         assertTrue(function.body().statements().isEmpty());
         IrClassDeclaration clazz = assertInstanceOf(IrClassDeclaration.class, statements.get(1));
         assertEquals("Item", clazz.name());
-        assertTrue(clazz.declaredModifiers().isEmpty());
+        assertFalse(clazz.isAbstract());
+        assertFalse(clazz.isFinal());
         assertNull(clazz.parentType());
         assertTrue(clazz.interfaces().isEmpty());
         assertTrue(clazz.members().isEmpty());
@@ -119,15 +120,16 @@ class NamedDeclarationConversionTest {
         assertVariable(assertInstanceOf(IrReturn.class, function.body().statements().getFirst()).value(), "value");
     }
 
-    // 类修饰符和继承列表保留重复与顺序，四种名称形式均不绑定或自动限定。
+    // 类修饰符转换为标志；继承列表仍保留重复与顺序，四种名称形式不绑定或自动限定。
     @Test
     void preservesClassModifiersAndInheritanceNameForms() {
         IrClassDeclaration clazz = assertInstanceOf(IrClassDeclaration.class, only("""
-                abstract final abstract class Mixed extends \\Base
+                abstract class Mixed extends \\Base
                     implements Local, Rel\\Contract, \\Root\\Contract, namespace\\Contract, Local {}
                 """));
         assertEquals("Mixed", clazz.name());
-        assertEquals(List.of(Modifier.ABSTRACT, Modifier.FINAL, Modifier.ABSTRACT), clazz.declaredModifiers());
+        assertTrue(clazz.isAbstract());
+        assertFalse(clazz.isFinal());
         assertName(clazz.parentType(), "Base", NameForm.FULLY_QUALIFIED);
         assertEquals(5, clazz.interfaces().size());
         assertName(clazz.interfaces().getFirst(), "Local", NameForm.UNQUALIFIED);
@@ -164,7 +166,8 @@ class NamedDeclarationConversionTest {
         assertInteger(assertInstanceOf(IrClassConstant.class, iface.members().get(1)).value(), 2);
         IrMethod method = assertInstanceOf(IrMethod.class, iface.members().get(2));
         assertEquals("read", method.name());
-        assertEquals(List.of(Modifier.PUBLIC), method.declaredModifiers());
+        assertEquals(Visibility.PUBLIC, method.visibility());
+        assertTrue(method.isAbstract());
         assertTrue(method.returnsReference());
         assertNull(method.body());
         assertTrue(method.parameters().getFirst().byReference());
@@ -172,13 +175,13 @@ class NamedDeclarationConversionTest {
         assertTrue(method.returnType().nullable());
     }
 
-    // 类和 trait 复用完整成员转换；成组属性／常量原位展开，半保留名与 VAR 不被改写。
+    // 类和 trait 复用完整成员转换；成组成员原位展开，半保留名保持原文而 var 归一为 public。
     @Test
     void sharesOrderedMemberConversionAcrossClassesAndTraits() {
         String members = """
-                public public static $first, $second = null;
+                public static $first, $second = null;
                 function echo() {}
-                private protected const list = 1, VALUE = 2;
+                private const list = 1, VALUE = 2;
                 use Feature;
                 abstract function missing($value);
                 var $legacy;
@@ -189,24 +192,30 @@ class NamedDeclarationConversionTest {
             assertEquals(8, converted.size());
             IrProperty first = assertInstanceOf(IrProperty.class, converted.getFirst());
             assertEquals("first", first.name());
-            assertEquals(List.of(Modifier.PUBLIC, Modifier.PUBLIC, Modifier.STATIC), first.declaredModifiers());
+            assertEquals(Visibility.PUBLIC, first.visibility());
+            assertTrue(first.isStatic());
             assertNull(first.initialValue());
             IrProperty second = assertInstanceOf(IrProperty.class, converted.get(1));
             assertEquals("second", second.name());
             assertInstanceOf(IrNullLiteral.class, second.initialValue());
             IrMethod method = assertInstanceOf(IrMethod.class, converted.get(2));
             assertEquals("echo", method.name());
-            assertTrue(method.declaredModifiers().isEmpty());
+            assertEquals(Visibility.PUBLIC, method.visibility());
+            assertFalse(method.isStatic());
+            assertFalse(method.isAbstract());
+            assertFalse(method.isFinal());
             assertNotNull(method.body());
             assertTrue(method.body().statements().isEmpty());
             IrClassConstant constant = assertInstanceOf(IrClassConstant.class, converted.get(3));
             assertEquals("list", constant.name());
-            assertEquals(List.of(Modifier.PRIVATE, Modifier.PROTECTED), constant.declaredModifiers());
+            assertEquals(Visibility.PRIVATE, constant.visibility());
             assertInteger(constant.value(), 1);
             assertEquals("VALUE", assertInstanceOf(IrClassConstant.class, converted.get(4)).name());
             assertInstanceOf(IrTraitUse.class, converted.get(5));
             assertNull(assertInstanceOf(IrMethod.class, converted.get(6)).body());
-            assertEquals(List.of(Modifier.VAR), assertInstanceOf(IrProperty.class, converted.get(7)).declaredModifiers());
+            IrProperty legacy = assertInstanceOf(IrProperty.class, converted.get(7));
+            assertEquals(Visibility.PUBLIC, legacy.visibility());
+            assertFalse(legacy.isStatic());
         }
     }
 
@@ -231,11 +240,11 @@ class NamedDeclarationConversionTest {
         assertEquals("work", precedence.method().method());
         assertEquals(List.of("Other", "Other"), precedence.insteadOf().stream().map(IrNameReference::value).toList());
         IrTraitAlias alias = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1));
-        assertEquals(Modifier.PROTECTED, alias.modifier());
+        assertEquals(Visibility.PROTECTED, alias.visibility());
         assertEquals("alias", alias.newName());
         IrTraitAlias modifierOnly = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(2));
         assertNull(modifierOnly.method().trait());
-        assertEquals(Modifier.PRIVATE, modifierOnly.modifier());
+        assertEquals(Visibility.PRIVATE, modifierOnly.visibility());
         assertNull(modifierOnly.newName());
         assertEquals("clone", assertInstanceOf(IrTraitAlias.class, use.adaptations().get(3)).newName());
     }
@@ -402,12 +411,12 @@ class NamedDeclarationConversionTest {
         assertEquals("AnotherForeach", assertInstanceOf(IrClassDeclaration.class, foreachLoop.body().statements().get(1)).name());
     }
 
-    // 前端可解析的冲突修饰符、重复成员和接口方法体按结构保留，不额外校验 PHP 编译合法性。
+    // 有效修饰符归一后，重复成员、接口属性和方法体仍按结构保留，不增加局部 PHP 合法性检查。
     @Test
     void retainsParseableDeclarationsWithoutAddingSemanticValidation() {
         List<IrStatement> statements = body("""
                 interface Loose { public $value = make(); function run() {} use Feature; }
-                final abstract class Conflicting { public $same, $same; const X = make(), X = 2; }
+                final class Repeated { public $same, $same; const X = make(), X = 2; }
                 function duplicated($x, $x = compute()) {}
                 """).statements();
         IrInterfaceDeclaration iface = assertInstanceOf(IrInterfaceDeclaration.class, statements.getFirst());
@@ -416,7 +425,8 @@ class NamedDeclarationConversionTest {
         assertNotNull(assertInstanceOf(IrMethod.class, iface.members().get(1)).body());
         assertInstanceOf(IrTraitUse.class, iface.members().get(2));
         IrClassDeclaration clazz = assertInstanceOf(IrClassDeclaration.class, statements.get(1));
-        assertEquals(List.of(Modifier.FINAL, Modifier.ABSTRACT), clazz.declaredModifiers());
+        assertTrue(clazz.isFinal());
+        assertFalse(clazz.isAbstract());
         assertEquals("same", assertInstanceOf(IrProperty.class, clazz.members().getFirst()).name());
         assertEquals("same", assertInstanceOf(IrProperty.class, clazz.members().get(1)).name());
         assertCall(assertInstanceOf(IrClassConstant.class, clazz.members().get(2)).value(), "make");

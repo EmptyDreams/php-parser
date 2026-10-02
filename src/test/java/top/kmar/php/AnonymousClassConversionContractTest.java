@@ -364,14 +364,17 @@ class AnonymousClassConversionContractTest {
                 () -> new IrNewAnonymous(definition, List.of(), null),
                 () -> new IrAnonymousClass(null, null, List.of(), SOURCE), () -> new IrAnonymousClass(null, List.of(), null, SOURCE),
                 () -> new IrAnonymousClass(null, List.of(), List.of(), null),
-                () -> new IrMethod(null, List.of(), List.of(), null, false, null, SOURCE),
-                () -> new IrMethod("run", null, List.of(), null, false, null, SOURCE),
-                () -> new IrMethod("run", List.of(), null, null, false, null, SOURCE),
-                () -> new IrMethod("run", List.of(), List.of(), null, false, null, null),
-                () -> new IrProperty(null, List.of(), null, SOURCE), () -> new IrProperty("value", null, null, SOURCE),
-                () -> new IrProperty("value", List.of(), null, null),
-                () -> new IrClassConstant(null, List.of(), value, SOURCE), () -> new IrClassConstant("VALUE", null, value, SOURCE),
-                () -> new IrClassConstant("VALUE", List.of(), null, SOURCE), () -> new IrClassConstant("VALUE", List.of(), value, null),
+                () -> new IrMethod(null, Visibility.PUBLIC, false, false, false, List.of(), null, false, null, SOURCE),
+                () -> new IrMethod("run", null, false, false, false, List.of(), null, false, null, SOURCE),
+                () -> new IrMethod("run", Visibility.PUBLIC, false, false, false, null, null, false, null, SOURCE),
+                () -> new IrMethod("run", Visibility.PUBLIC, false, false, false, List.of(), null, false, null, null),
+                () -> new IrProperty(null, Visibility.PUBLIC, false, null, SOURCE),
+                () -> new IrProperty("value", null, false, null, SOURCE),
+                () -> new IrProperty("value", Visibility.PUBLIC, false, null, null),
+                () -> new IrClassConstant(null, Visibility.PUBLIC, value, SOURCE),
+                () -> new IrClassConstant("VALUE", null, value, SOURCE),
+                () -> new IrClassConstant("VALUE", Visibility.PUBLIC, null, SOURCE),
+                () -> new IrClassConstant("VALUE", Visibility.PUBLIC, value, null),
                 () -> new IrTraitUse(null, List.of(), SOURCE), () -> new IrTraitUse(List.of(trait), null, SOURCE),
                 () -> new IrTraitUse(List.of(trait), List.of(), null),
                 () -> new IrTraitMethodReference(trait, null, SOURCE), () -> new IrTraitMethodReference(trait, "run", null),
@@ -381,37 +384,45 @@ class AnonymousClassConversionContractTest {
             assertThrows(NullPointerException.class, constructor);
         }
         assertNull(definition.parentType());
-        IrMethod method = new IrMethod("run", List.of(), List.of(), null, false, null, SOURCE);
+        IrMethod method = new IrMethod("run", Visibility.PUBLIC, false, false, false, List.of(), null, false, null, SOURCE);
         assertNull(method.returnType());
         assertNull(method.body());
-        assertNull(new IrProperty("value", List.of(), null, SOURCE).initialValue());
+        assertNull(new IrProperty("value", Visibility.PUBLIC, false, null, SOURCE).initialValue());
         assertNull(new IrTraitMethodReference(null, "run", SOURCE).trait());
     }
 
-    // 名称和语法必需集合非空，优先规则必须限定 trait；不校验修饰符组合或名称重复。
+    // 名称和必需集合非空，修饰符存有效值；方法体仍不与 abstract 标志关联校验。
     @Test
-    void validatesStructuralModelInvariantsWithoutSemanticNormalization() {
+    void validatesNormalizedModelInvariantsWithoutCheckingMethodBodies() {
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
         IrNameReference trait = irName("Trait");
         IrTraitMethodReference reference = new IrTraitMethodReference(trait, "run", SOURCE);
         for (Executable constructor : List.<Executable>of(
-                () -> new IrMethod("", List.of(), List.of(), null, false, null, SOURCE),
-                () -> new IrProperty("", List.of(), null, SOURCE),
-                () -> new IrClassConstant("", List.of(), value, SOURCE),
+                () -> new IrMethod("", Visibility.PUBLIC, false, false, false, List.of(), null, false, null, SOURCE),
+                () -> new IrProperty("", Visibility.PUBLIC, false, null, SOURCE),
+                () -> new IrClassConstant("", Visibility.PUBLIC, value, SOURCE),
                 () -> new IrTraitUse(List.of(), List.of(), SOURCE),
                 () -> new IrTraitMethodReference(trait, "", SOURCE),
                 () -> new IrTraitPrecedence(reference, List.of(), SOURCE),
                 () -> new IrTraitPrecedence(new IrTraitMethodReference(null, "run", SOURCE), List.of(trait), SOURCE),
                 () -> new IrTraitAlias(reference, null, null, SOURCE),
-                () -> new IrTraitAlias(reference, Modifier.PUBLIC, "", SOURCE))) {
+                () -> new IrTraitAlias(reference, Visibility.PUBLIC, "", SOURCE),
+                () -> new IrMethod("run", Visibility.PUBLIC, false, true, true, List.of(), null, false, null, SOURCE),
+                () -> new IrMethod("run", Visibility.PRIVATE, false, true, false, List.of(), null, false, null, SOURCE))) {
             assertThrows(IllegalArgumentException.class, constructor);
         }
-        var flags = List.of(Modifier.PUBLIC, Modifier.PUBLIC, Modifier.PRIVATE, Modifier.VAR);
-        assertEquals(flags, new IrMethod("Run", flags, List.of(), null, true, null, SOURCE).declaredModifiers());
-        assertEquals(flags, new IrProperty("Value", flags, null, SOURCE).declaredModifiers());
-        assertEquals(flags, new IrClassConstant("Value", flags, value, SOURCE).declaredModifiers());
-        assertNull(new IrTraitAlias(reference, Modifier.STATIC, null, SOURCE).newName());
-        assertNull(new IrTraitAlias(reference, null, "Renamed", SOURCE).modifier());
+        IrMethod ordinary = new IrMethod("Run", Visibility.PRIVATE, true, false, true,
+                List.of(), null, true, null, SOURCE);
+        assertEquals(Visibility.PRIVATE, ordinary.visibility());
+        assertTrue(ordinary.isStatic());
+        assertTrue(ordinary.isFinal());
+        assertFalse(ordinary.isAbstract());
+        assertNull(ordinary.body());
+        IrBlock body = new IrBlock(List.of(), SOURCE);
+        assertSame(body, new IrMethod("Run", Visibility.PROTECTED, true, true, false,
+                List.of(), null, false, body, SOURCE).body());
+        assertNull(new IrTraitAlias(reference, Visibility.PRIVATE, null, SOURCE).newName());
+        assertNull(new IrTraitAlias(reference, null, "Renamed", SOURCE).visibility());
     }
 
     // 每一种列表都拒绝 null 元素，避免将损坏记录留到下游遍历时才发现。
@@ -424,12 +435,11 @@ class AnonymousClassConversionContractTest {
         for (Executable constructor : List.<Executable>of(
                 () -> new IrNewAnonymous(definition, Arrays.asList(new IrArgument(value, false, SOURCE), null), SOURCE),
                 () -> new IrAnonymousClass(null, Arrays.asList(trait, null), List.of(), SOURCE),
-                () -> new IrAnonymousClass(null, List.of(), Arrays.asList(new IrProperty("value", List.of(), null, SOURCE), null), SOURCE),
-                () -> new IrMethod("run", Arrays.asList(Modifier.PUBLIC, null), List.of(), null, false, null, SOURCE),
-                () -> new IrMethod("run", List.of(), Arrays.asList(new IrParameter("value", null, false, false, null, SOURCE), null),
+                () -> new IrAnonymousClass(null, List.of(), Arrays.asList(
+                        new IrProperty("value", Visibility.PUBLIC, false, null, SOURCE), null), SOURCE),
+                () -> new IrMethod("run", Visibility.PUBLIC, false, false, false,
+                        Arrays.asList(new IrParameter("value", null, false, false, null, SOURCE), null),
                         null, false, null, SOURCE),
-                () -> new IrProperty("value", Arrays.asList(Modifier.PUBLIC, null), null, SOURCE),
-                () -> new IrClassConstant("VALUE", Arrays.asList(Modifier.PUBLIC, null), value, SOURCE),
                 () -> new IrTraitUse(Arrays.asList(trait, null), List.of(), SOURCE),
                 () -> new IrTraitUse(List.of(trait), Arrays.asList(new IrTraitAlias(reference, null, "renamed", SOURCE), null), SOURCE),
                 () -> new IrTraitPrecedence(reference, Arrays.asList(trait, null), SOURCE))) {
@@ -441,12 +451,11 @@ class AnonymousClassConversionContractTest {
     @Test
     void snapshotsEveryModelListAndPreservesDuplicates() {
         IrNameReference trait = irName("Trait");
-        var flags = new ArrayList<>(List.of(Modifier.PUBLIC, Modifier.PUBLIC));
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
         var parameters = new ArrayList<>(List.of(parameter, parameter));
-        var method = new IrMethod("run", flags, parameters, null, false, null, SOURCE);
-        var property = new IrProperty("value", flags, null, SOURCE);
-        var constant = new IrClassConstant("VALUE", flags, new IrIntegerLiteral(1, SOURCE), SOURCE);
+        var method = new IrMethod("run", Visibility.PUBLIC, true, false, true, parameters, null, false, null, SOURCE);
+        var property = new IrProperty("value", Visibility.PUBLIC, true, null, SOURCE);
+        var constant = new IrClassConstant("VALUE", Visibility.PUBLIC, new IrIntegerLiteral(1, SOURCE), SOURCE);
         var reference = new IrTraitMethodReference(trait, "run", SOURCE);
         var names = new ArrayList<>(List.of(trait, trait));
         var precedence = new IrTraitPrecedence(reference, names, SOURCE);
@@ -457,10 +466,10 @@ class AnonymousClassConversionContractTest {
         var argument = new IrArgument(new IrIntegerLiteral(1, SOURCE), false, SOURCE);
         var arguments = new ArrayList<>(List.of(argument, argument));
         var result = new IrNewAnonymous(definition, arguments, SOURCE);
-        flags.clear(); parameters.clear(); names.clear(); rules.clear(); members.clear(); arguments.clear();
-        assertEquals(List.of(Modifier.PUBLIC, Modifier.PUBLIC), method.declaredModifiers());
-        assertEquals(method.declaredModifiers(), property.declaredModifiers());
-        assertEquals(method.declaredModifiers(), constant.declaredModifiers());
+        parameters.clear(); names.clear(); rules.clear(); members.clear(); arguments.clear();
+        assertEquals(Visibility.PUBLIC, method.visibility());
+        assertEquals(method.visibility(), property.visibility());
+        assertEquals(method.visibility(), constant.visibility());
         assertEquals(List.of(parameter, parameter), method.parameters());
         assertEquals(List.of(trait, trait), definition.interfaces());
         assertEquals(definition.interfaces(), use.traits());
@@ -468,8 +477,7 @@ class AnonymousClassConversionContractTest {
         assertEquals(List.of(precedence, precedence), use.adaptations());
         assertEquals(List.of(method, property, constant, use, method), definition.members());
         assertEquals(List.of(argument, argument), result.arguments());
-        for (List<?> list : List.of(method.declaredModifiers(), property.declaredModifiers(), constant.declaredModifiers(),
-                method.parameters(), definition.interfaces(), definition.members(), use.traits(), use.adaptations(),
+        for (List<?> list : List.of(method.parameters(), definition.interfaces(), definition.members(), use.traits(), use.adaptations(),
                 precedence.insteadOf(), result.arguments())) {
             assertThrows(UnsupportedOperationException.class, list::clear);
         }

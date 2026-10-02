@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 import top.kmar.php.extract.SyntaxConversionException;
 import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
-import top.kmar.php.model.Modifier;
 import top.kmar.php.model.NameForm;
 import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
@@ -90,29 +89,37 @@ class AnonymousClassConversionTest {
         assertEquals("last", assertInstanceOf(IrProperty.class, members.get(6)).name());
     }
 
-    // 只保存显式修饰符，不注入 public、不合并重复项，也不把 var 改写为 public。
+    // 成员修饰符转换为有效可见性和布尔标志，省略可见性与 var 均规范化为 public。
     @Test
-    void preservesDeclaredModifierOrderWithoutSemanticNormalization() {
+    void normalizesMemberVisibilityAndModifierFlags() {
         List<IrClassMember> members = definition("""
                 new class {
-                    public public static $value;
+                    public static $value;
                     var $legacy;
-                    private protected const VALUE = 1;
+                    private const VALUE = 1;
                     static final public function run() {}
                     function plain() {}
                     const PLAIN = 2;
                 }
                 """).members();
-        assertEquals(List.of(Modifier.PUBLIC, Modifier.PUBLIC, Modifier.STATIC),
-                assertInstanceOf(IrProperty.class, members.get(0)).declaredModifiers());
-        assertEquals(List.of(Modifier.VAR),
-                assertInstanceOf(IrProperty.class, members.get(1)).declaredModifiers());
-        assertEquals(List.of(Modifier.PRIVATE, Modifier.PROTECTED),
-                assertInstanceOf(IrClassConstant.class, members.get(2)).declaredModifiers());
-        assertEquals(List.of(Modifier.STATIC, Modifier.FINAL, Modifier.PUBLIC),
-                assertInstanceOf(IrMethod.class, members.get(3)).declaredModifiers());
-        assertTrue(assertInstanceOf(IrMethod.class, members.get(4)).declaredModifiers().isEmpty());
-        assertTrue(assertInstanceOf(IrClassConstant.class, members.get(5)).declaredModifiers().isEmpty());
+        IrProperty value = assertInstanceOf(IrProperty.class, members.getFirst());
+        assertEquals(Visibility.PUBLIC, value.visibility());
+        assertTrue(value.isStatic());
+        IrProperty legacy = assertInstanceOf(IrProperty.class, members.get(1));
+        assertEquals(Visibility.PUBLIC, legacy.visibility());
+        assertFalse(legacy.isStatic());
+        assertEquals(Visibility.PRIVATE, assertInstanceOf(IrClassConstant.class, members.get(2)).visibility());
+        IrMethod run = assertInstanceOf(IrMethod.class, members.get(3));
+        assertEquals(Visibility.PUBLIC, run.visibility());
+        assertTrue(run.isStatic());
+        assertTrue(run.isFinal());
+        assertFalse(run.isAbstract());
+        IrMethod plain = assertInstanceOf(IrMethod.class, members.get(4));
+        assertEquals(Visibility.PUBLIC, plain.visibility());
+        assertFalse(plain.isStatic());
+        assertFalse(plain.isAbstract());
+        assertFalse(plain.isFinal());
+        assertEquals(Visibility.PUBLIC, assertInstanceOf(IrClassConstant.class, members.get(5)).visibility());
     }
 
     // 属性省略初值与显式 null 不合并，重复成员名称及大小写不在本层判错。
@@ -163,7 +170,8 @@ class AnonymousClassConversionTest {
                 }
                 """);
         assertEquals("list", method.name());
-        assertEquals(List.of(Modifier.PUBLIC, Modifier.STATIC), method.declaredModifiers());
+        assertEquals(Visibility.PUBLIC, method.visibility());
+        assertTrue(method.isStatic());
         assertTrue(method.returnsReference());
         assertEquals(2, method.parameters().size());
         IrParameter first = method.parameters().getFirst();
@@ -299,21 +307,21 @@ class AnonymousClassConversionTest {
         IrTraitAlias plain = assertInstanceOf(IrTraitAlias.class, use.adaptations().getFirst());
         assertNull(plain.method().trait());
         assertEquals("run", plain.method().method());
-        assertNull(plain.modifier());
+        assertNull(plain.visibility());
         assertEquals("renamed", plain.newName());
         assertEquals("list", assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1)).newName());
         IrTraitAlias modified = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(2));
         assertName(modified.method().trait(), "A", NameForm.UNQUALIFIED);
-        assertEquals(Modifier.PROTECTED, modified.modifier());
+        assertEquals(Visibility.PROTECTED, modified.visibility());
         assertEquals("replacement", modified.newName());
         IrTraitAlias visibilityOnly = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(3));
-        assertEquals(Modifier.PRIVATE, visibilityOnly.modifier());
+        assertEquals(Visibility.PRIVATE, visibilityOnly.visibility());
         assertNull(visibilityOnly.newName());
         IrTraitAlias keyword = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(4));
-        assertNull(keyword.modifier());
+        assertNull(keyword.visibility());
         assertEquals("var", keyword.newName());
         IrTraitAlias keywordAfterModifier = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(5));
-        assertEquals(Modifier.PROTECTED, keywordAfterModifier.modifier());
+        assertEquals(Visibility.PROTECTED, keywordAfterModifier.visibility());
         assertEquals("private", keywordAfterModifier.newName());
     }
 
@@ -343,23 +351,23 @@ class AnonymousClassConversionTest {
         assertName(last.insteadOf().getFirst(), "B", NameForm.NAMESPACE_RELATIVE);
     }
 
-    // 语法允许的 static/abstract/final alias 修饰符照常保留，不在 IR 转换时补 PHP 编译检查。
+    // 可见性调整不要求来源 trait 存在，重复排除项和重复改名不在修饰符规范化时解决。
     @Test
-    void preservesSyntacticTraitModifiersAndUnresolvedConflicts() {
+    void preservesVisibilityAliasesAndUnresolvedTraitConflicts() {
         IrTraitUse use = traitUse("""
                 use A {
-                    Missing::run as static;
-                    run as abstract renamed;
-                    run as final;
+                    Missing::run as public;
+                    run as protected renamed;
+                    run as private;
                     Missing::run insteadof Other, Other;
                     run as renamed;
                     run as renamed;
                 }
                 """);
         assertEquals(6, use.adaptations().size());
-        assertEquals(Modifier.STATIC, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(0)).modifier());
-        assertEquals(Modifier.ABSTRACT, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1)).modifier());
-        assertEquals(Modifier.FINAL, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(2)).modifier());
+        assertEquals(Visibility.PUBLIC, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(0)).visibility());
+        assertEquals(Visibility.PROTECTED, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1)).visibility());
+        assertEquals(Visibility.PRIVATE, assertInstanceOf(IrTraitAlias.class, use.adaptations().get(2)).visibility());
         assertEquals(2, assertInstanceOf(IrTraitPrecedence.class, use.adaptations().get(3)).insteadOf().size());
         assertEquals("renamed", assertInstanceOf(IrTraitAlias.class, use.adaptations().get(4)).newName());
         assertEquals("renamed", assertInstanceOf(IrTraitAlias.class, use.adaptations().get(5)).newName());

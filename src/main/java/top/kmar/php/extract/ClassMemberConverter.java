@@ -4,7 +4,6 @@ import java_cup.runtime.AstNode;
 import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
-import top.kmar.php.model.Modifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -15,11 +14,15 @@ final class ClassMemberConverter {
     private final ConversionContext context;
     private final ExpressionConverter expressions;
     private final CallableSignatureConverter signatures;
+    private final ModifierConverter modifiers;
+    private final boolean inInterface;
 
-    ClassMemberConverter(ConversionContext context, ExpressionConverter expressions) {
+    ClassMemberConverter(ConversionContext context, ExpressionConverter expressions, boolean inInterface) {
         this.context = Objects.requireNonNull(context, "context");
         this.expressions = Objects.requireNonNull(expressions, "expressions");
         this.signatures = new CallableSignatureConverter(context, expressions);
+        this.modifiers = new ModifierConverter(context);
+        this.inInterface = inInterface;
     }
 
     List<IrClassMember> convert(NodeListNodeClassStatement list, String path) {
@@ -44,9 +47,11 @@ final class ClassMemberConverter {
     }
 
     private IrMethod method(NodeClassStatement node, String path) {
+        String name = context.identifier(context.required(node.getName(), node, path + ".name"), path + ".name");
+        var flags = modifiers.methodModifiers(context.required(node.getMethodMods(), node, path + ".methodMods"),
+                inInterface, path + ".methodMods");
         return new IrMethod(
-                context.identifier(context.required(node.getName(), node, path + ".name"), path + ".name"),
-                modifiers(context.required(node.getMethodMods(), node, path + ".methodMods"), path + ".methodMods"),
+                name, flags.visibility(), flags.isStatic(), flags.isAbstract(), flags.isFinal(),
                 signatures.parameters(context.required(node.getParams(), node, path + ".params"), path + ".params"),
                 signatures.returnType(context.required(node.getReturnType(), node, path + ".returnType"),
                         path + ".returnType"),
@@ -65,15 +70,12 @@ final class ClassMemberConverter {
     }
 
     private List<IrProperty> properties(NodeClassStatement node, String path) {
-        List<Modifier> modifiers;
+        ModifierConverter.MemberFlags flags;
         if (node instanceof NodeClassStatement.VarPropertyDecl) {
-            if (!context.text(node.getKw(), node, path + ".kw").equalsIgnoreCase("var")) {
-                throw context.error(node, path + ".kw", "无法识别的 var 属性标记");
-            }
-            modifiers = List.of(Modifier.VAR);
+            flags = modifiers.varProperty(node.getKw(), node, path + ".kw");
         } else {
-            modifiers = nonEmpty(modifiers(context.required(node.getPropMods(), node, path + ".propMods"),
-                    path + ".propMods"), node, path + ".propMods");
+            flags = modifiers.propertyModifiers(context.required(node.getPropMods(), node, path + ".propMods"),
+                    node, path + ".propMods");
         }
         var list = context.required(node.getProps(), node, path + ".props");
         var values = nonEmpty(context.elements(list.getValue(), node, path + ".props"), node, path + ".props");
@@ -91,13 +93,14 @@ final class ClassMemberConverter {
                 throw context.error(property, p, "无法识别的属性声明结构");
             }
             result.add(new IrProperty(context.text(property.getVar(), property, p + ".var"),
-                    modifiers, initialValue, context.source(property)));
+                    flags.visibility(), flags.isStatic(), initialValue, context.source(property)));
         }
         return result;
     }
 
     private List<IrClassConstant> constants(NodeClassStatement node, String path) {
-        var modifiers = modifiers(context.required(node.getConstMods(), node, path + ".constMods"), path + ".constMods");
+        var visibility = modifiers.constantVisibility(context.required(node.getConstMods(), node, path + ".constMods"),
+                inInterface, path + ".constMods");
         var list = context.required(node.getConsts(), node, path + ".consts");
         var values = nonEmpty(context.elements(list.getValue(), node, path + ".consts"), node, path + ".consts");
         var result = new ArrayList<IrClassConstant>(values.size());
@@ -109,33 +112,10 @@ final class ClassMemberConverter {
             }
             result.add(new IrClassConstant(
                     context.identifier(context.required(constant.getName(), constant, p + ".name"), p + ".name"),
-                    modifiers, expressions.convert(context.required(constant.getValue(), constant, p + ".value"),
+                    visibility, expressions.convert(context.required(constant.getValue(), constant, p + ".value"),
                     p + ".value"), context.source(constant)));
         }
         return result;
-    }
-
-    private List<Modifier> modifiers(NodeListNodeMemberModifier list, String path) {
-        var values = context.elements(list.getValue(), list, path);
-        var result = new ArrayList<Modifier>(values.size());
-        for (int i = 0; i < values.size(); i++) result.add(modifier(values.get(i), path + "[" + i + "]"));
-        return result;
-    }
-
-    private Modifier modifier(NodeMemberModifier node, String path) {
-        Modifier modifier = switch (node) {
-            case NodeMemberModifier.Public ignored -> Modifier.PUBLIC;
-            case NodeMemberModifier.Protected ignored -> Modifier.PROTECTED;
-            case NodeMemberModifier.Private ignored -> Modifier.PRIVATE;
-            case NodeMemberModifier.Static ignored -> Modifier.STATIC;
-            case NodeMemberModifier.Abstract ignored -> Modifier.ABSTRACT;
-            case NodeMemberModifier.Final ignored -> Modifier.FINAL;
-            default -> throw context.error(node, path, "无法识别的成员修饰符结构");
-        };
-        if (!context.text(node.getKw(), node, path + ".kw").equalsIgnoreCase(modifier.name())) {
-            throw context.error(node, path + ".kw", "成员修饰符与结构不一致");
-        }
-        return modifier;
     }
 
     private List<IrNameReference> names(NodeListNodeName list, String path) {
@@ -185,7 +165,7 @@ final class ClassMemberConverter {
             throw context.error(node, path, "无法识别的 trait 别名规则");
         }
         var method = traitMethod(context.required(node.getMethod(), node, path + ".method"), path + ".method");
-        Modifier modifier = null;
+        Visibility visibility = null;
         String newName = null;
         if (node instanceof NodeTraitAlias.AliasAs) {
             newName = context.text(node.getAlias(), node, path + ".alias");
@@ -194,13 +174,14 @@ final class ClassMemberConverter {
             // 保留字分支使用共享的 kw 字段，不依赖 CUP 生成的匿名变体名称。
             newName = context.text(keyword.getKw(), keyword, path + ".keyword.kw");
         } else {
-            modifier = modifier(context.required(node.getModifier(), node, path + ".modifier"), path + ".modifier");
+            visibility = modifiers.traitVisibility(context.required(node.getModifier(), node, path + ".modifier"),
+                    path + ".modifier");
             if (node instanceof NodeTraitAlias.AliasModifierNewName) {
                 newName = context.identifier(context.required(node.getNewName(), node, path + ".newName"),
                         path + ".newName");
             }
         }
-        return new IrTraitAlias(method, modifier, newName, context.source(node));
+        return new IrTraitAlias(method, visibility, newName, context.source(node));
     }
 
     private IrTraitMethodReference traitMethod(NodeTraitMethodReference node, String path) {

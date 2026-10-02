@@ -324,11 +324,10 @@ class NamedDeclarationConversionContractTest {
                 () -> new IrFunctionDeclaration("run", null, null, false, body, SOURCE),
                 () -> new IrFunctionDeclaration("run", List.of(), null, false, null, SOURCE),
                 () -> new IrFunctionDeclaration("run", List.of(), null, false, body, null),
-                () -> new IrClassDeclaration(null, List.of(), null, List.of(), List.of(), SOURCE),
-                () -> new IrClassDeclaration("C", null, null, List.of(), List.of(), SOURCE),
-                () -> new IrClassDeclaration("C", List.of(), null, null, List.of(), SOURCE),
-                () -> new IrClassDeclaration("C", List.of(), null, List.of(), null, SOURCE),
-                () -> new IrClassDeclaration("C", List.of(), null, List.of(), List.of(), null),
+                () -> new IrClassDeclaration(null, false, false, null, List.of(), List.of(), SOURCE),
+                () -> new IrClassDeclaration("C", false, false, null, null, List.of(), SOURCE),
+                () -> new IrClassDeclaration("C", false, false, null, List.of(), null, SOURCE),
+                () -> new IrClassDeclaration("C", false, false, null, List.of(), List.of(), null),
                 () -> new IrInterfaceDeclaration(null, List.of(), List.of(), SOURCE),
                 () -> new IrInterfaceDeclaration("I", null, List.of(), SOURCE),
                 () -> new IrInterfaceDeclaration("I", List.of(), null, SOURCE),
@@ -340,13 +339,14 @@ class NamedDeclarationConversionContractTest {
         }
         for (Executable constructor : List.<Executable>of(
                 () -> new IrFunctionDeclaration("", List.of(), null, false, body, SOURCE),
-                () -> new IrClassDeclaration("", List.of(), null, List.of(), List.of(), SOURCE),
+                () -> new IrClassDeclaration("", false, false, null, List.of(), List.of(), SOURCE),
+                () -> new IrClassDeclaration("C", true, true, null, List.of(), List.of(), SOURCE),
                 () -> new IrInterfaceDeclaration("", List.of(), List.of(), SOURCE),
                 () -> new IrTraitDeclaration("", List.of(), SOURCE))) {
             assertThrows(IllegalArgumentException.class, constructor);
         }
         assertNull(new IrFunctionDeclaration("run", List.of(), null, false, body, SOURCE).returnType());
-        assertNull(new IrClassDeclaration("C", List.of(), null, List.of(), List.of(), SOURCE).parentType());
+        assertNull(new IrClassDeclaration("C", false, false, null, List.of(), List.of(), SOURCE).parentType());
     }
 
     // 每种新列表都拒绝 null 元素，不把损坏记录留到下游遍历阶段才发现。
@@ -355,12 +355,11 @@ class NamedDeclarationConversionContractTest {
         IrBlock body = new IrBlock(List.of(), SOURCE);
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
         var name = new IrNameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
-        var member = new IrProperty("value", List.of(), null, SOURCE);
+        var member = new IrProperty("value", Visibility.PUBLIC, false, null, SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrFunctionDeclaration("run", Arrays.asList(parameter, null), null, false, body, SOURCE),
-                () -> new IrClassDeclaration("C", Arrays.asList(Modifier.ABSTRACT, null), null, List.of(), List.of(), SOURCE),
-                () -> new IrClassDeclaration("C", List.of(), null, Arrays.asList(name, null), List.of(), SOURCE),
-                () -> new IrClassDeclaration("C", List.of(), null, List.of(), Arrays.asList(member, null), SOURCE),
+                () -> new IrClassDeclaration("C", false, false, null, Arrays.asList(name, null), List.of(), SOURCE),
+                () -> new IrClassDeclaration("C", false, false, null, List.of(), Arrays.asList(member, null), SOURCE),
                 () -> new IrInterfaceDeclaration("I", Arrays.asList(name, null), List.of(), SOURCE),
                 () -> new IrInterfaceDeclaration("I", List.of(), Arrays.asList(member, null), SOURCE),
                 () -> new IrTraitDeclaration("T", Arrays.asList(member, null), SOURCE))) {
@@ -368,30 +367,30 @@ class NamedDeclarationConversionContractTest {
         }
     }
 
-    // 所有声明列表保存有序只读快照，重复参数、修饰符、父类型和成员不被合并。
+    // 所有声明列表保存有序只读快照，重复参数、父类型和成员不被合并。
     @Test
     void snapshotsDeclarationCollectionsWithoutRemovingDuplicates() {
         IrBlock body = new IrBlock(List.of(), SOURCE);
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
         var parameters = new ArrayList<>(List.of(parameter, parameter));
-        var flags = new ArrayList<>(List.of(Modifier.ABSTRACT, Modifier.ABSTRACT, Modifier.FINAL));
         var name = new IrNameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
         var names = new ArrayList<>(List.of(name, name));
-        IrClassMember member = new IrProperty("value", List.of(), null, SOURCE);
+        IrClassMember member = new IrProperty("value", Visibility.PUBLIC, false, null, SOURCE);
         var members = new ArrayList<>(List.of(member, member));
         var function = new IrFunctionDeclaration("Run", parameters, null, true, body, SOURCE);
-        var clazz = new IrClassDeclaration("C", flags, name, names, members, SOURCE);
+        var clazz = new IrClassDeclaration("C", true, false, name, names, members, SOURCE);
         var iface = new IrInterfaceDeclaration("I", names, members, SOURCE);
         var trait = new IrTraitDeclaration("T", members, SOURCE);
-        parameters.clear(); flags.clear(); names.clear(); members.clear();
+        parameters.clear(); names.clear(); members.clear();
         assertEquals(List.of(parameter, parameter), function.parameters());
-        assertEquals(List.of(Modifier.ABSTRACT, Modifier.ABSTRACT, Modifier.FINAL), clazz.declaredModifiers());
+        assertTrue(clazz.isAbstract());
+        assertFalse(clazz.isFinal());
         assertEquals(List.of(name, name), clazz.interfaces());
         assertEquals(clazz.interfaces(), iface.parentTypes());
         assertEquals(List.of(member, member), clazz.members());
         assertEquals(clazz.members(), iface.members());
         assertEquals(clazz.members(), trait.members());
-        for (List<?> list : List.of(function.parameters(), clazz.declaredModifiers(), clazz.interfaces(), clazz.members(),
+        for (List<?> list : List.of(function.parameters(), clazz.interfaces(), clazz.members(),
                 iface.parentTypes(), iface.members(), trait.members())) {
             assertThrows(UnsupportedOperationException.class, list::clear);
         }
