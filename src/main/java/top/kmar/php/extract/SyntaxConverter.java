@@ -22,7 +22,8 @@ import java.util.Objects;
  * 数字字面量按 64 位 PHP 7.2 规则解码为 long/double，字符串文本按 UTF-8 和 PHP 7.2 转义规则
  * 解码为不可变字节值；布尔字面量保存为 boolean，PHP null 使用独立节点，与字段缺省的 Java null 区分。
  * 字面量原文仍保留在 AST 中，插值及魔术常量不求值，反引号命令不执行。
- * declare 的 ticks、encoding 和 strict_types 统一为枚举，未知指令明确失败；指令值仍为表达式，不执行设置。
+ * declare 的 ticks、encoding 和 strict_types 统一为枚举，未知指令向标准错误流发出警告，
+ * 以 UNKNOWN 保留原名并继续转换；指令值仍为表达式，不执行设置。
  * 具名声明保留原语句位置和名称拼写，不注册符号或判定生效时机。
  * 参数及返回类型使用独立 IrTypeReference，区分内置、self／parent 和具名类型，不推导隐式可空性或绑定类名。
  * 类和成员修饰符转换为 Visibility 与布尔标志，补 public 及接口方法的隐式 abstract；

@@ -202,8 +202,12 @@ final class StatementConverter {
             if (!(directive instanceof NodeConstDecl.ConstDecl)) {
                 throw context.error(directive, directivePath, "无法识别的 declare 指令结构");
             }
-            directives.add(new IrDeclareDirective(
-                    declareDirectiveKind(directive, directivePath + ".name"),
+            String name = context.text(directive.getName(), directive, directivePath + ".name");
+            DeclareDirectiveKind kind = declareDirectiveKind(name);
+            if (kind == DeclareDirectiveKind.UNKNOWN) {
+                context.warn(directive, directivePath + ".name", "不支持的 declare 指令: " + name);
+            }
+            directives.add(new IrDeclareDirective(kind, kind == DeclareDirectiveKind.UNKNOWN ? name : null,
                     expressions.convert(context.required(directive.getValue(), directive, directivePath + ".value"),
                             directivePath + ".value"), context.source(directive)));
         }
@@ -212,19 +216,18 @@ final class StatementConverter {
                 context.source(node));
     }
 
-    private DeclareDirectiveKind declareDirectiveKind(NodeConstDecl node, String path) {
-        String spelling = context.text(node.getName(), node, path);
+    private DeclareDirectiveKind declareDirectiveKind(String spelling) {
         // 标准名称只使用 ASCII；Unicode 大小写映射不能将近似拼写变成标准指令。
         for (int i = 0; i < spelling.length(); i++) {
             if (spelling.charAt(i) > 0x7f) {
-                throw context.error(node, path, "不支持的 declare 指令: " + spelling);
+                return DeclareDirectiveKind.UNKNOWN;
             }
         }
         return switch (spelling.toLowerCase(Locale.ROOT)) {
             case "ticks" -> DeclareDirectiveKind.TICKS;
             case "encoding" -> DeclareDirectiveKind.ENCODING;
             case "strict_types" -> DeclareDirectiveKind.STRICT_TYPES;
-            default -> throw context.error(node, path, "不支持的 declare 指令: " + spelling);
+            default -> DeclareDirectiveKind.UNKNOWN;
         };
     }
 

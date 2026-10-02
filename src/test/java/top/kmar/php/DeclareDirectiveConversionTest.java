@@ -3,19 +3,24 @@ package top.kmar.php;
 import java_cup.runtime.symbol.complex.ComplexLocation;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import top.kmar.php.extract.DeclarationExtractor;
 import top.kmar.php.extract.SyntaxConversionException;
 import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.*;
 
-import java.lang.reflect.RecordComponent;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-/** 验证 declare 指令名称的强类型规范化、严格识别及跨入口诊断契约。 */
+/** 验证标准 declare 指令规范化及未知指令警告后继续转换的行为。 */
+@ResourceLock(Resources.SYSTEM_ERR)
 class DeclareDirectiveConversionTest {
     private static final ComplexLocation OUTER = ComplexLocation.of(2, 1, 6, 30);
     private static final ComplexLocation ENTRY = ComplexLocation.of(3, 2, 3, 25);
@@ -36,14 +41,21 @@ class DeclareDirectiveConversionTest {
         assertNull(declaration.body());
     }
 
-    // 未知指令和 Unicode 近似拼写都拒绝；错误定位到当前条目的 name，而不是名称 token 或语句外壳。
+    // 未知指令和 Unicode 近似拼写均警告并保留，不误识别成标准名称。
     @Test
-    void rejectsUnknownAndUnicodeLookalikeNamesAtTheDirectiveEntry() {
+    void warnsAndPreservesUnknownAndUnicodeLookalikeNames() {
         for (String spelling : List.of("custom", "tick", "ticks ", " ticks", "strict-types",
                 "tic\u212As", "tick\u017F", "\u017Ftrict_types", "encod\u0131ng")) {
             NodeStatement.Declare syntax = statement(
                     directive("ticks", ENTRY), directive(spelling, ENTRY));
-            assertFailure(() -> convert(syntax), "body.statements[0].directives[1].name", ENTRY);
+            assertWarning(() -> {
+                IrDeclare declaration = convert(syntax);
+                assertEquals(DeclareDirectiveKind.TICKS, declaration.directives().getFirst().kind());
+                IrDeclareDirective unknown = declaration.directives().get(1);
+                assertEquals(DeclareDirectiveKind.UNKNOWN, unknown.kind());
+                assertEquals(spelling, unknown.unknownName());
+                assertEquals(1, assertInstanceOf(IrIntegerLiteral.class, unknown.value()).value());
+            }, "body.statements[0].directives[1].name", ENTRY, spelling);
         }
     }
 
@@ -75,53 +87,75 @@ class DeclareDirectiveConversionTest {
         assertNotNull(strict.directives().getFirst().source().range());
     }
 
-    // 三个入口都不能忽略未知指令，解析成功后应沿原 AST 层级报告完整 name 路径。
+    // 三个入口均报告警告并继续转换后续语句，嵌套闭包沿原层级保留指令。
     @Test
-    void propagatesUnknownDirectiveFailuresThroughEveryEntrypoint() {
-        NodeProgram syntax = assertDoesNotThrow(() -> program("declare(ticks=1, custom=2);"));
+    void warnsAndContinuesThroughEveryEntrypoint() {
+        NodeProgram syntax = program("declare(ticks=1, custom=2); echo 3;");
         NodeStatement declaration = syntax.getStmts().getValue().getFirst().getStmt();
         ComplexLocation entry = declaration.getDirectives().getValue().get(1).getLocation();
-        assertFailure(() -> SyntaxConverter.convertFile(syntax, SOURCE.sourceId()),
-                "program.stmts[0].stmt.directives[1].name", entry);
-        assertFailure(() -> convert(declaration), "body.statements[0].directives[1].name", entry);
+        assertWarning(() -> {
+            IrBlock body = SyntaxConverter.convertFile(syntax, SOURCE.sourceId()).namespaceSections().getFirst().body();
+            assertEquals(2, body.statements().size());
+            IrDeclare converted = assertInstanceOf(IrDeclare.class, body.statements().getFirst());
+            assertEquals("custom", converted.directives().get(1).unknownName());
+            assertInstanceOf(IrEcho.class, body.statements().get(1));
+        }, "program.stmts[0].stmt.directives[1].name", entry, "custom");
+        assertWarning(() -> assertEquals(2, convert(declaration).directives().size()),
+                "body.statements[0].directives[1].name", entry, "custom");
 
         NodeExpr closure = assertDoesNotThrow(() -> expression("function() { "
                 + "return function() { declare(custom=1); }; }"));
         NodeConstDecl nestedEntry = closure.getEv().getStmts().getValue().getFirst().getStmt().getValue()
                 .getEv().getStmts().getValue().getFirst().getStmt().getDirectives().getValue().getFirst();
-        assertFailure(() -> SyntaxConverter.convertExpression(new SyntaxExpression(closure, SOURCE)),
-                "expression.ev.stmts[0].stmt.value.ev.stmts[0].stmt.directives[0].name", nestedEntry.getLocation());
+        assertWarning(() -> {
+            IrClosure outer = assertInstanceOf(IrClosure.class,
+                    SyntaxConverter.convertExpression(new SyntaxExpression(closure, SOURCE)));
+            IrClosure inner = assertInstanceOf(IrClosure.class,
+                    assertInstanceOf(IrReturn.class, outer.body().statements().getFirst()).value());
+            assertEquals("custom", assertInstanceOf(IrDeclare.class, inner.body().statements().getFirst())
+                    .directives().getFirst().unknownName());
+        }, "expression.ev.stmts[0].stmt.value.ev.stmts[0].stmt.directives[0].name",
+                nestedEntry.getLocation(), "custom");
     }
 
-    // 新增名称诊断使用条目自身来源；未知和零宽位置都不从已知名称 token 或包装回填。
+    // 警告和 IR 来源使用指令项自身位置，未知和零宽位置不从名称 token 回填。
     @Test
-    void preservesUnknownAndZeroWidthSourcesForRejectedNames() {
+    void preservesUnknownAndZeroWidthSourcesForWarnings() {
         for (ComplexLocation location : Arrays.asList(null, ComplexLocation.NO_LOCATION, ComplexLocation.of(4, 7, 4, 7))) {
-            assertFailure(() -> convert(statement(directive("custom", location))),
-                    "body.statements[0].directives[0].name", location);
+            assertWarning(() -> {
+                var source = convert(statement(directive("custom", location))).directives().getFirst().source();
+                assertEquals(SOURCE.sourceId(), source.sourceId());
+                if (location == null || location.isNoLocation()) assertNull(source.range());
+                else assertEquals(new SourceRange(4, 7, 4, 7), source.range());
+            }, "body.statements[0].directives[0].name", location, "custom");
         }
     }
 
-    // 指令模型只保存 kind、value 和 source，不重复保存原始名称，也不增加指令值类型限制。
+    // 标准指令无需额外名称；未知指令必须提供原名，值仍可为表达式。
     @Test
-    void storesOnlyTypedKindsWithoutAddingValueRestrictions() {
-        assertEquals(List.of(DeclareDirectiveKind.TICKS, DeclareDirectiveKind.ENCODING, DeclareDirectiveKind.STRICT_TYPES),
-                List.of(DeclareDirectiveKind.values()));
-        assertEquals(List.of("kind", "value", "source"), Arrays.stream(IrDeclareDirective.class.getRecordComponents())
-                .map(RecordComponent::getName).toList());
-        assertEquals(DeclareDirectiveKind.class, IrDeclareDirective.class.getRecordComponents()[0].getType());
+    void preservesUnknownNamesWithoutAddingValueRestrictions() {
         IrExpression value = new IrVariable(new IrFixedName("value", SOURCE), SOURCE);
-        for (DeclareDirectiveKind kind : DeclareDirectiveKind.values()) {
+        for (DeclareDirectiveKind kind : List.of(DeclareDirectiveKind.TICKS, DeclareDirectiveKind.ENCODING,
+                DeclareDirectiveKind.STRICT_TYPES)) {
             IrDeclareDirective directive = new IrDeclareDirective(kind, value, SOURCE);
             assertSame(kind, directive.kind());
             assertSame(value, directive.value());
             assertSame(SOURCE, directive.source());
+            assertNull(directive.unknownName());
         }
+        IrDeclareDirective unknown = new IrDeclareDirective(DeclareDirectiveKind.UNKNOWN, "Custom", value, SOURCE);
+        assertEquals("Custom", unknown.unknownName());
+        assertSame(value, unknown.value());
+        assertThrows(NullPointerException.class, () -> new IrDeclareDirective(DeclareDirectiveKind.UNKNOWN, value, SOURCE));
+        assertThrows(IllegalArgumentException.class,
+                () -> new IrDeclareDirective(DeclareDirectiveKind.UNKNOWN, "", value, SOURCE));
+        assertThrows(IllegalArgumentException.class,
+                () -> new IrDeclareDirective(DeclareDirectiveKind.TICKS, "custom", value, SOURCE));
     }
 
-    // 未知指令失败后仍能独立转换选定函数；原始拼写、AST、声明对象和索引均保持不变。
+    // 未知指令警告不修改原始拼写、AST、声明对象或索引，也不影响后续转换。
     @Test
-    void isolatesFailuresAndPreservesOriginalSyntaxAndDeclarations() {
+    void preservesOriginalSyntaxAndDeclarationsAfterWarnings() {
         NodeProgram syntax = program("""
                 function valid() { declare(TiCkS=$value, EnCoDiNg=1, STRICT_TYPES=false) {} }
                 function invalid() { declare(custom=1); }
@@ -132,8 +166,11 @@ class DeclareDirectiveConversionTest {
         FunctionDefinition invalid = assertInstanceOf(FunctionDefinition.class, declarations.get(1));
         String before = syntax.toTreeString(false);
         IrBlock expected = SyntaxConverter.convertBody(valid.body());
-        assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(invalid.body()));
-        assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertFile(syntax, SOURCE.sourceId()));
+        String warnings = captureWarnings(() -> {
+            assertDoesNotThrow(() -> SyntaxConverter.convertBody(invalid.body()));
+            assertDoesNotThrow(() -> SyntaxConverter.convertFile(syntax, SOURCE.sourceId()));
+        });
+        assertEquals(2, warnings.lines().count());
         assertEquals(expected, SyntaxConverter.convertBody(valid.body()));
         NodeStatement original = syntax.getStmts().getValue().getFirst().getFunction().getStmts().getValue()
                 .getFirst().getStmt();
@@ -146,6 +183,43 @@ class DeclareDirectiveConversionTest {
                 List.of(original), new SourceInfo("other.php", null))).statements().getFirst());
         assertEquals("other.php", another.directives().getFirst().source().sourceId());
         assertEquals(expected, SyntaxConverter.convertBody(valid.body()));
+    }
+
+    // 混合及重复未知指令逐项警告，保留顺序和局部主体；标准指令不发出警告。
+    @Test
+    void preservesMixedRepeatedDirectivesAndBody() {
+        String warnings = captureWarnings(() -> {
+            IrBlock body = SyntaxConverter.convertFile(program(
+                    "declare(custom=1, ticks=2, custom=3, encoding='UTF-8') { echo 4; } echo 5;"))
+                    .namespaceSections().getFirst().body();
+            IrDeclare declaration = assertInstanceOf(IrDeclare.class, body.statements().getFirst());
+            assertEquals(List.of(DeclareDirectiveKind.UNKNOWN, DeclareDirectiveKind.TICKS,
+                            DeclareDirectiveKind.UNKNOWN, DeclareDirectiveKind.ENCODING),
+                    declaration.directives().stream().map(IrDeclareDirective::kind).toList());
+            assertEquals(3, assertInstanceOf(IrIntegerLiteral.class, declaration.directives().get(2).value()).value());
+            assertInstanceOf(IrEcho.class, declaration.body().statements().getFirst());
+            assertInstanceOf(IrEcho.class, body.statements().get(1));
+        });
+        assertEquals(2, warnings.lines().count());
+        assertTrue(warnings.contains("directives[0].name"));
+        assertTrue(warnings.contains("directives[2].name"));
+        assertEquals("", captureWarnings(() -> convert(program("declare(ticks=1);")
+                .getStmts().getValue().getFirst().getStmt())));
+    }
+
+    // 未知名称不再阻断转换，但损坏的值或主体仍按原契约失败。
+    @Test
+    void doesNotSuppressMalformedValuesOrBodies() {
+        NodeConstDecl missingValue = new NodeConstDecl.ConstDecl(new NodeString("custom", TOKEN), null, ENTRY);
+        String warnings = captureWarnings(() -> {
+            var error = assertThrows(SyntaxConversionException.class, () -> convert(statement(missingValue)));
+            assertEquals("body.statements[0].directives[0].value", error.fieldPath());
+            var bodyError = assertThrows(SyntaxConversionException.class, () -> convert(
+                    new NodeStatement.Declare(new NodeListNodeConstDecl(List.of(directive("custom", ENTRY)), OUTER),
+                            null, OUTER)));
+            assertEquals("body.statements[0].declareBody", bodyError.fieldPath());
+        });
+        assertEquals(2, warnings.lines().count());
     }
 
     private static NodeProgram program(String code) {
@@ -172,13 +246,28 @@ class DeclareDirectiveConversionTest {
         return new NodeConstDecl.ConstDecl(new NodeString(name, TOKEN), value, location);
     }
 
-    private static void assertFailure(Executable conversion, String path, ComplexLocation location) {
-        SyntaxConversionException error = assertThrows(SyntaxConversionException.class, conversion);
-        assertEquals(path, error.fieldPath());
-        assertFalse(error.reason().isBlank());
-        assertEquals(SOURCE.sourceId(), error.source().sourceId());
-        if (location == null || location.isNoLocation()) assertNull(error.source().range());
-        else assertEquals(new SourceRange(location.getStartLine(), location.getStartColumn(),
-                location.getEndLine(), location.getEndColumn()), error.source().range());
+    private static void assertWarning(Executable conversion, String path, ComplexLocation location, String name) {
+        String warning = captureWarnings(conversion);
+        assertEquals(1, warning.lines().count());
+        assertTrue(warning.contains("PHP IR 警告"), warning);
+        assertTrue(warning.contains(path), warning);
+        assertTrue(warning.contains(SOURCE.sourceId()), warning);
+        assertTrue(warning.contains("不支持的 declare 指令: " + name), warning);
+        String position = location == null || location.isNoLocation() ? "未知位置"
+                : location.getStartLine() + ":" + location.getStartColumn() + "-"
+                + location.getEndLine() + ":" + location.getEndColumn();
+        assertTrue(warning.contains(position), warning);
+    }
+
+    private static String captureWarnings(Executable conversion) {
+        PrintStream previous = System.err;
+        var output = new ByteArrayOutputStream();
+        try (var stream = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+            System.setErr(stream);
+            assertDoesNotThrow(conversion);
+        } finally {
+            System.setErr(previous);
+        }
+        return output.toString(StandardCharsets.UTF_8);
     }
 }

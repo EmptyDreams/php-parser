@@ -26,6 +26,15 @@ final class ConversionContext implements AstReaderContext {
         return new SyntaxConversionException(source(node), path, reason);
     }
 
+    /** 与词法层一致向标准错误流报告警告，继续转换，不修改 AST。 */
+    void warn(@Nullable AstNode node, String path, String reason) {
+        var range = source(node).range();
+        String position = range == null ? "未知位置" : range.startLine() + ":" + range.startColumn()
+                + "-" + range.endLine() + ":" + range.endColumn();
+        System.err.println("PHP IR 警告 [" + (sourceId == null ? "未知来源" : sourceId)
+                + " " + position + "] " + path + ": " + reason);
+    }
+
     IrNameReference name(NodeName node, String path) {
         required(node, null, path);
         String value = namespaceName(required(node.getN(), node, path + ".n"), path + ".n");

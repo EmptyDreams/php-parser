@@ -217,9 +217,9 @@ class ScopeStatementConversionTest {
         });
     }
 
-    // 文法接受的未知名称与非 ASCII 近似拼写在名称处失败，诊断来源取对应指令项。
+    // 文法接受的未知名称与非 ASCII 近似拼写保留为 UNKNOWN，来源仍取对应指令项。
     @Test
-    void rejectsUnknownDirectiveNamesWithTheirOriginalItemSource() {
+    void preservesUnknownDirectiveNamesWithTheirOriginalItemSource() {
         for (String name : List.of("custom", "unknown", "tick", "strict_type", "ticks_extra", "encoding1",
                 "tıcks", "ticKs", "encodİng", "ſtrict_types")) {
             String code = "declare(ticks=1, " + name + "=nextValue());";
@@ -227,12 +227,15 @@ class ScopeStatementConversionTest {
             NodeInnerStatement wrapper = assertInstanceOf(NodeInnerStatement.class, syntax.statements().getFirst());
             NodeConstDecl directive = wrapper.getStmt().getDirectives().getValue().get(1);
             ComplexLocation location = directive.getLocation();
-            var error = assertThrows(SyntaxConversionException.class, () -> SyntaxConverter.convertBody(syntax), code);
-            assertEquals("scope.php", error.source().sourceId(), code);
-            assertTrue(error.fieldPath().endsWith(".directives[1].name"), error.fieldPath());
+            IrDeclare declaration = assertInstanceOf(IrDeclare.class,
+                    SyntaxConverter.convertBody(syntax).statements().getFirst());
+            IrDeclareDirective unknown = declaration.directives().get(1);
+            assertEquals(DeclareDirectiveKind.UNKNOWN, unknown.kind(), code);
+            assertEquals(name, unknown.unknownName(), code);
+            assertCall(unknown.value(), "nextValue");
+            assertEquals("scope.php", unknown.source().sourceId(), code);
             assertEquals(new SourceRange(location.getStartLine(), location.getStartColumn(),
-                    location.getEndLine(), location.getEndColumn()), error.source().range(), code);
-            assertFalse(error.reason().isBlank(), code);
+                    location.getEndLine(), location.getEndColumn()), unknown.source().range(), code);
         }
     }
 
