@@ -4,7 +4,6 @@ import java_cup.runtime.AstNode;
 import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
-import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SyntaxBody;
 
 import java.util.ArrayDeque;
@@ -327,7 +326,7 @@ final class StatementConverter {
             var list = context.required(item.getExceptions(), item, p + ".exceptions");
             var names = context.elements(list.getValue(), list, p + ".exceptions");
             if (names.isEmpty()) throw context.error(item, p + ".exceptions", "catch 至少需要一个异常类型");
-            var types = new ArrayList<NameReference>(names.size());
+            var types = new ArrayList<IrNameReference>(names.size());
             for (int i = 0; i < names.size(); i++) {
                 types.add(context.name(names.get(i), p + ".exceptions[" + i + "]"));
             }

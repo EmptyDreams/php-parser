@@ -270,7 +270,7 @@ class ControlFlowConversionContractTest {
     @Test
     void snapshotsAndFreezesControlFlowCollections() {
         IrBlock body = new IrBlock(List.of(), SOURCE);
-        var types = new ArrayList<>(List.of(new NameReference("Error", NameForm.UNQUALIFIED, SOURCE)));
+        var types = new ArrayList<>(List.of(new IrNameReference("Error", NameForm.UNQUALIFIED, SOURCE)));
         IrCatch catcher = new IrCatch(types, "error", body, SOURCE);
         var catches = new ArrayList<>(List.of(catcher));
         IrTry guarded = new IrTry(body, catches, null, SOURCE);
@@ -279,7 +279,7 @@ class ControlFlowConversionContractTest {
         types.clear();
         catches.clear();
         cases.clear();
-        assertEquals("Error", catcher.exceptionTypes().getFirst().spelling());
+        assertEquals("Error", catcher.exceptionTypes().getFirst().value());
         assertSame(catcher, guarded.catches().getFirst());
         assertEquals(1, selection.cases().size());
         assertThrows(UnsupportedOperationException.class, catcher.exceptionTypes()::clear);

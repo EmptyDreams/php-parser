@@ -5,8 +5,8 @@ import org.jetbrains.annotations.Nullable;
 import top.kmar.php.NodeIdentifier;
 import top.kmar.php.NodeName;
 import top.kmar.php.NodeSemiReserved;
+import top.kmar.php.ir.IrNameReference;
 import top.kmar.php.model.NameForm;
-import top.kmar.php.model.NameReference;
 
 /** 单次转换使用的 CUP 适配器；来源和诊断不依赖声明提取状态。 */
 final class ConversionContext implements AstReaderContext {
@@ -26,19 +26,43 @@ final class ConversionContext implements AstReaderContext {
         return new SyntaxConversionException(source(node), path, reason);
     }
 
-    NameReference name(NodeName node, String path) {
+    IrNameReference name(NodeName node, String path) {
         required(node, null, path);
         String value = namespaceName(required(node.getN(), node, path + ".n"), path + ".n");
-        return switch (node) {
-            case NodeName.FullyQualified ignored -> new NameReference(
-                    text(node.getKw(), node, path + ".kw") + value, NameForm.FULLY_QUALIFIED, source(node));
-            case NodeName.Relative ignored -> new NameReference(
-                    text(node.getKw(), node, path + ".kw") + "\\" + value,
-                    NameForm.NAMESPACE_RELATIVE, source(node));
-            case NodeName.Unqualified ignored -> new NameReference(value,
-                    value.indexOf('\\') < 0 ? NameForm.UNQUALIFIED : NameForm.QUALIFIED, source(node));
+        NameForm form = switch (node) {
+            case NodeName.FullyQualified ignored -> {
+                if (!text(node.getKw(), node, path + ".kw").equals("\\")) {
+                    throw error(node, path + ".kw", "全限定名称标记必须为单个反斜杠");
+                }
+                yield NameForm.FULLY_QUALIFIED;
+            }
+            case NodeName.Relative ignored -> {
+                if (!isNamespaceMarker(text(node.getKw(), node, path + ".kw"))) {
+                    throw error(node, path + ".kw", "相对名称标记必须为 namespace");
+                }
+                yield NameForm.NAMESPACE_RELATIVE;
+            }
+            case NodeName.Unqualified ignored -> value.indexOf('\\') < 0
+                    ? NameForm.UNQUALIFIED : NameForm.QUALIFIED;
             default -> throw error(node, path, "无法识别的名称引用");
         };
+        try {
+            return new IrNameReference(value, form, source(node));
+        } catch (IllegalArgumentException exception) {
+            throw error(node, path + ".n", exception.getMessage());
+        }
+    }
+
+    /** 仅比较 ASCII 大小写；不能把 Unicode 近似字符当作语法关键字。 */
+    private static boolean isNamespaceMarker(String value) {
+        String expected = "namespace";
+        if (value.length() != expected.length()) return false;
+        for (int i = 0; i < value.length(); i++) {
+            char character = value.charAt(i);
+            if (character >= 'A' && character <= 'Z') character += 'a' - 'A';
+            if (character != expected.charAt(i)) return false;
+        }
+        return true;
     }
 
     /** 成员标识符也可以是文法允许的半保留字，保留原拼写。 */

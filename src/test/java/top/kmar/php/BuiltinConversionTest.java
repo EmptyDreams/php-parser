@@ -247,7 +247,7 @@ class BuiltinConversionTest {
         assertVariableTarget(property.receiver(), "object");
         IrStaticPropertyTarget staticProperty = assertInstanceOf(IrStaticPropertyTarget.class, unset.targets().get(3));
         assertEquals("Items", fixedName(staticProperty.property()));
-        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, staticProperty.classReference()).name().spelling());
+        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, staticProperty.classReference()).name().value());
         assertVariableTarget(unset.targets().get(4), "a");
     }
 
@@ -362,7 +362,7 @@ class BuiltinConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }

@@ -18,6 +18,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 验证 IR 类型分类、双层来源、签名接入及与第一阶段类型模型的隔离契约。 */
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 class TypeReferenceConversionTest {
     private static final ComplexLocation OUTER = ComplexLocation.of(2, 1, 8, 30);
     private static final ComplexLocation FULL_TYPE = ComplexLocation.of(3, 2, 3, 25);
@@ -72,11 +73,10 @@ class TypeReferenceConversionTest {
                 IrNamedType named = assertInstanceOf(IrNamedType.class, type.type());
                 String expected = switch (form) {
                     case QUALIFIED -> "App\\" + component;
-                    case FULLY_QUALIFIED -> "\\" + component;
-                    case NAMESPACE_RELATIVE -> "namespace\\" + component;
+                    case FULLY_QUALIFIED, NAMESPACE_RELATIVE -> component;
                     default -> throw new AssertionError(form);
                 };
-                assertEquals(expected, named.name().spelling());
+                assertEquals(expected, named.name().value());
                 assertEquals(form, named.name().form());
                 assertSame(named.name().source(), named.source());
             }
@@ -90,7 +90,7 @@ class TypeReferenceConversionTest {
                 "\u0131nt", "\u017Ftring", "\u0130NT", "b\u03BFol", "v\u03BFid")) {
             IrNamedType named = assertInstanceOf(IrNamedType.class,
                     convertType(new NodeType.NameType(name(spelling, NameForm.UNQUALIFIED, NAME), TYPE)).type());
-            assertEquals(spelling, named.name().spelling());
+            assertEquals(spelling, named.name().value());
             assertEquals(NameForm.UNQUALIFIED, named.name().form());
         }
     }
@@ -154,11 +154,11 @@ class TypeReferenceConversionTest {
         }
     }
 
-    // 模型只保存枚举或名称引用；必需字段非空，具名类型的 source 直接委托原 NameReference。
+    // 模型只保存枚举或规范化名称引用；必需字段非空，具名类型的 source 直接委托 IrNameReference。
     @Test
     void enforcesTypedModelContractsWithoutDuplicatingNameSources() throws ReflectiveOperationException {
         IrBuiltinType builtin = new IrBuiltinType(BuiltinTypeKind.INTEGER, SOURCE);
-        NameReference reference = new NameReference("\\App\\Widget", NameForm.FULLY_QUALIFIED, SOURCE);
+        IrNameReference reference = new IrNameReference("App\\Widget", NameForm.FULLY_QUALIFIED, SOURCE);
         IrNamedType named = new IrNamedType(reference);
         assertSame(reference, named.name());
         assertSame(SOURCE, named.source());

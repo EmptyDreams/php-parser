@@ -55,7 +55,7 @@ class LoopConversionTest {
         assertInteger(initializer.value(), 0);
         assertEquals(2, loop.conditions().size());
         IrCall check = assertInstanceOf(IrCall.class, loop.conditions().getFirst());
-        assertEquals("check", assertInstanceOf(IrNamedCallTarget.class, check.target()).name().spelling());
+        assertEquals("check", assertInstanceOf(IrNamedCallTarget.class, check.target()).name().value());
         assertEquals(BinaryOperator.LESS, assertInstanceOf(IrBinary.class, loop.conditions().get(1)).operator());
         assertEquals(2, loop.updates().size());
         assertInstanceOf(IrUpdate.class, loop.updates().getFirst());
@@ -88,7 +88,7 @@ class LoopConversionTest {
         IrForeach valueOnly = assertInstanceOf(IrForeach.class, only("foreach (items() as $value) echo 1;"));
         IrCall items = assertInstanceOf(IrCall.class,
                 assertInstanceOf(IrExpressionIterable.class, valueOnly.iterable()).expression());
-        assertEquals("items", assertInstanceOf(IrNamedCallTarget.class, items.target()).name().spelling());
+        assertEquals("items", assertInstanceOf(IrNamedCallTarget.class, items.target()).name().value());
         assertNull(valueOnly.keyTarget());
         assertFalse(valueOnly.byReference());
         assertEquals("value", fixedName(assertInstanceOf(IrVariableTarget.class, valueOnly.valueTarget()).name()));

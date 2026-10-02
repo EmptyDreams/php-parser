@@ -467,7 +467,7 @@ class ReferenceAndDestructuringConversionContractTest {
     }
 
     private static IrAssignmentTarget irTarget(String name) {
-        return new IrVariableTarget(new IrFixedName(name, SOURCE), SOURCE);
+        return new IrVariableTarget(new IrFixedName(name, SOURCE));
     }
 
     private static IrDestructuringPattern irPattern() {

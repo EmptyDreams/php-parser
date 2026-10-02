@@ -208,7 +208,7 @@ class ObjectConversionContractTest {
         assertEquals(sourceRange(index), indexTarget.source().range());
         assertEquals(sourceRange(index.getOffset()), indexTarget.index().source().range());
         assertEquals(sourceRange(call), callResult.source().range());
-        assertEquals(callResult.source(), callBase.source());
+        assertSame(callResult.source(), callBase.source());
         assertEquals(sourceRange(call.getArgs().getArgs().getValue().getFirst()),
                 callResult.arguments().getFirst().source().range());
         assertEquals(sourceRange(call.getArgs().getArgs().getValue().getFirst().getArg()),
@@ -256,7 +256,7 @@ class ObjectConversionContractTest {
     @Test
     void snapshotsAndFreezesObjectArguments() {
         SourceInfo source = new SourceInfo(null, null);
-        IrClassReference clazz = new IrNamedClassReference(new NameReference("C", NameForm.UNQUALIFIED, source), source);
+        IrClassReference clazz = new IrNamedClassReference(new IrNameReference("C", NameForm.UNQUALIFIED, source), source);
         var arguments = new ArrayList<>(List.of(new IrArgument(new IrIntegerLiteral(1, source), false, source)));
         IrNew constructor = new IrNew(clazz, arguments, source);
         IrMethodCall method = new IrMethodCall(new IrVariable(new IrFixedName("object", source), source),
@@ -353,7 +353,7 @@ class ObjectConversionContractTest {
         assertEquals(4, functionBody.statements().size());
         IrStaticCall call = assertInstanceOf(IrStaticCall.class,
                 assertInstanceOf(IrAssignment.class, statementExpression(functionBody, 0)).value());
-        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, call.classReference()).name().spelling());
+        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, call.classReference()).name().value());
         assertEquals("make", fixedName(call.method()));
         IrAssignment append = assertInstanceOf(IrAssignment.class, statementExpression(functionBody, 2));
         assertNull(assertInstanceOf(IrIndexTarget.class, append.target()).index());

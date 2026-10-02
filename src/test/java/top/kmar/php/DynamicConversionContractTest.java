@@ -201,19 +201,20 @@ class DynamicConversionContractTest {
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
         IrAccessName name = new IrFixedName("value", SOURCE);
         IrClassReference clazz = new IrDynamicClassReference(value, SOURCE);
-        NameReference named = new NameReference("f", NameForm.UNQUALIFIED, SOURCE);
-        IrCallTarget target = new IrNamedCallTarget(named, SOURCE);
+        IrNameReference named = new IrNameReference("f", NameForm.UNQUALIFIED, SOURCE);
+        IrCallTarget target = new IrNamedCallTarget(named);
         for (Executable invalid : List.<Executable>of(
                 () -> new IrFixedName(null, SOURCE), () -> new IrFixedName("value", null),
                 () -> new IrComputedName(null, SOURCE), () -> new IrComputedName(value, null),
-                () -> new IrNamedCallTarget(null, SOURCE), () -> new IrNamedCallTarget(named, null),
+                () -> new IrNamedCallTarget(null),
+                () -> new IrExpressionWriteBase(null),
                 () -> new IrExpressionCallTarget(null, SOURCE), () -> new IrExpressionCallTarget(value, null),
                 () -> new IrDynamicClassReference(null, SOURCE), () -> new IrDynamicClassReference(value, null),
                 () -> new IrArgument(null, false, SOURCE), () -> new IrArgument(value, true, null),
                 () -> new IrVariable(null, SOURCE), () -> new IrVariable(name, null),
-                () -> new IrVariableTarget(null, SOURCE), () -> new IrVariableTarget(name, null),
+                () -> new IrVariableTarget(null),
                 () -> new IrPropertyAccess(value, null, SOURCE),
-                () -> new IrPropertyTarget(new IrVariableTarget(name, SOURCE), null, SOURCE),
+                () -> new IrPropertyTarget(new IrVariableTarget(name), null, SOURCE),
                 () -> new IrStaticPropertyAccess(clazz, null, SOURCE),
                 () -> new IrStaticPropertyTarget(clazz, null, SOURCE),
                 () -> new IrMethodCall(value, null, List.of(), SOURCE),
@@ -237,7 +238,7 @@ class DynamicConversionContractTest {
         IrClassReference clazz = new IrDynamicClassReference(value, SOURCE);
         var arguments = new ArrayList<>(List.of(new IrArgument(value, false, SOURCE), new IrArgument(value, true, SOURCE)));
         List<IrExpression> calls = List.of(
-                new IrCall(new IrNamedCallTarget(new NameReference("f", NameForm.UNQUALIFIED, SOURCE), SOURCE), arguments, SOURCE),
+                new IrCall(new IrNamedCallTarget(new IrNameReference("f", NameForm.UNQUALIFIED, SOURCE)), arguments, SOURCE),
                 new IrCall(new IrExpressionCallTarget(value, SOURCE), arguments, SOURCE),
                 new IrMethodCall(value, name, arguments, SOURCE),
                 new IrStaticCall(clazz, name, arguments, SOURCE),
@@ -304,8 +305,10 @@ class DynamicConversionContractTest {
         NodeName name = new NodeName.Unqualified(new NodeNamespaceName.Part(new NodeString("f", LEAF), LEAF), INNER);
         IrCall named = assertInstanceOf(IrCall.class, convert(call(new NodeFunctionCall.Call(name, arguments(
                 new NodeArgument.Arg(integer(1, LEAF), INNER)), LOCATION))));
-        assertSource(name, named.target().source());
-        assertSource(name, assertInstanceOf(IrNamedCallTarget.class, named.target()).name().source());
+        IrNamedCallTarget namedTarget = assertInstanceOf(IrNamedCallTarget.class, named.target());
+        assertSource(name, namedTarget.source());
+        assertSource(name, namedTarget.name().source());
+        assertSame(namedTarget.name().source(), namedTarget.source());
         assertEquals(range(INNER), named.arguments().getFirst().source().range());
         assertEquals(range(LEAF), named.arguments().getFirst().expression().source().range());
     }

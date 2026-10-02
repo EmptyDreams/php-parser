@@ -3,7 +3,7 @@ package top.kmar.php.extract;
 import java_cup.runtime.AstNode;
 import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
-import top.kmar.php.model.NameReference;
+import top.kmar.php.ir.IrNameReference;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +17,7 @@ final class TypeInheritanceConverter {
         this.context = Objects.requireNonNull(context, "context");
     }
 
-    @Nullable NameReference parent(NodeExtendsFrom node, String path) {
+    @Nullable IrNameReference parent(NodeExtendsFrom node, String path) {
         if (node.getClass() == NodeExtendsFrom.class) return null;
         if (!(node instanceof NodeExtendsFrom.Extends)) {
             throw context.error(node, path, "无法识别的父类包装");
@@ -25,7 +25,7 @@ final class TypeInheritanceConverter {
         return context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
     }
 
-    List<NameReference> interfaces(NodeImplementsList node, String path) {
+    List<IrNameReference> interfaces(NodeImplementsList node, String path) {
         if (node.getClass() == NodeImplementsList.class) return List.of();
         if (!(node instanceof NodeImplementsList.ImplementsList)) {
             throw context.error(node, path, "无法识别的接口列表包装");
@@ -34,7 +34,7 @@ final class TypeInheritanceConverter {
                 path + ".names", "implements 至少需要一个接口");
     }
 
-    List<NameReference> parentTypes(NodeInterfaceExtendsList node, String path) {
+    List<IrNameReference> parentTypes(NodeInterfaceExtendsList node, String path) {
         if (node.getClass() == NodeInterfaceExtendsList.class) return List.of();
         if (!(node instanceof NodeInterfaceExtendsList.ExtendsList)) {
             throw context.error(node, path, "无法识别的接口继承列表包装");
@@ -43,10 +43,10 @@ final class TypeInheritanceConverter {
                 path + ".names", "接口 extends 至少需要一个父接口");
     }
 
-    private List<NameReference> names(NodeListNodeName list, AstNode origin, String path, String emptyReason) {
+    private List<IrNameReference> names(NodeListNodeName list, AstNode origin, String path, String emptyReason) {
         var values = context.elements(list.getValue(), origin, path);
         if (values.isEmpty()) throw context.error(origin, path, emptyReason);
-        var result = new ArrayList<NameReference>(values.size());
+        var result = new ArrayList<IrNameReference>(values.size());
         for (int i = 0; i < values.size(); i++) {
             result.add(context.name(values.get(i), path + "[" + i + "]"));
         }

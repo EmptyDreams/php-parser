@@ -6,7 +6,6 @@ import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.Modifier;
 import top.kmar.php.model.NameForm;
-import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
 import top.kmar.php.model.SyntaxExpression;
@@ -55,16 +54,18 @@ class AnonymousClassConversionTest {
                 new class extends \\Base implements Local, Rel\\Contract, \\Root\\Contract,
                         namespace\\Contract, Local {}
                 """);
-        assertName(definition.parentType(), "\\Base", NameForm.FULLY_QUALIFIED);
+        assertName(definition.parentType(), "Base", NameForm.FULLY_QUALIFIED);
         assertEquals(5, definition.interfaces().size());
         assertName(definition.interfaces().get(0), "Local", NameForm.UNQUALIFIED);
         assertName(definition.interfaces().get(1), "Rel\\Contract", NameForm.QUALIFIED);
-        assertName(definition.interfaces().get(2), "\\Root\\Contract", NameForm.FULLY_QUALIFIED);
-        assertName(definition.interfaces().get(3), "namespace\\Contract", NameForm.NAMESPACE_RELATIVE);
+        assertName(definition.interfaces().get(2), "Root\\Contract", NameForm.FULLY_QUALIFIED);
+        assertName(definition.interfaces().get(3), "Contract", NameForm.NAMESPACE_RELATIVE);
         assertName(definition.interfaces().get(4), "Local", NameForm.UNQUALIFIED);
-        for (String parent : List.of("Base", "Rel\\Base", "namespace\\Base")) {
-            assertEquals(parent, definition("new class extends " + parent + " {}").parentType().spelling());
+        for (String parent : List.of("Base", "Rel\\Base")) {
+            assertEquals(parent, definition("new class extends " + parent + " {}").parentType().value());
         }
+        assertName(definition("new class extends namespace\\Base {}").parentType(),
+                "Base", NameForm.NAMESPACE_RELATIVE);
     }
 
     // 同一属性或常量声明展开为多个有序成员，其间的方法和 trait 使用项不重排。
@@ -172,7 +173,7 @@ class AnonymousClassConversionTest {
         assertNotNull(first.declaredType());
         assertTrue(first.declaredType().nullable());
         assertName(assertInstanceOf(IrNamedType.class, first.declaredType().type()).name(),
-                "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
+                "Pkg\\Value", NameForm.FULLY_QUALIFIED);
         assertInstanceOf(IrNullLiteral.class, first.defaultValue());
         IrParameter second = method.parameters().get(1);
         assertEquals("items", second.name());
@@ -185,7 +186,7 @@ class AnonymousClassConversionTest {
         assertNotNull(method.returnType());
         assertTrue(method.returnType().nullable());
         assertName(assertInstanceOf(IrNamedType.class, method.returnType().type()).name(),
-                "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
+                "Result", NameForm.NAMESPACE_RELATIVE);
         assertNotNull(method.body());
         assertVariable(assertInstanceOf(IrReturn.class, method.body().statements().getFirst()).value(), "value");
     }
@@ -278,7 +279,7 @@ class AnonymousClassConversionTest {
             assertTrue(assertInstanceOf(IrTraitUse.class, member).adaptations().isEmpty());
         }
         IrTraitUse duplicated = assertInstanceOf(IrTraitUse.class, members.get(2));
-        assertEquals(List.of("First", "First"), duplicated.traits().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("First", "First"), duplicated.traits().stream().map(IrNameReference::value).toList());
     }
 
     // trait 别名覆盖四种 AST 变体，区分无来源 trait、无修饰符、无新名与关键字新名。
@@ -329,17 +330,17 @@ class AnonymousClassConversionTest {
         assertEquals(3, use.traits().size());
         assertEquals(3, use.adaptations().size());
         IrTraitPrecedence first = assertInstanceOf(IrTraitPrecedence.class, use.adaptations().getFirst());
-        assertName(first.method().trait(), "namespace\\B", NameForm.NAMESPACE_RELATIVE);
+        assertName(first.method().trait(), "B", NameForm.NAMESPACE_RELATIVE);
         assertEquals("list", first.method().method());
-        assertEquals(List.of("\\Traits\\A", "Rel\\C", "Rel\\C"),
-                first.insteadOf().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Traits\\A", "Rel\\C", "Rel\\C"),
+                first.insteadOf().stream().map(IrNameReference::value).toList());
         IrTraitAlias alias = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1));
         assertName(alias.method().trait(), "Rel\\C", NameForm.QUALIFIED);
         assertEquals("echo", alias.method().method());
         assertEquals("Alias", alias.newName());
         IrTraitPrecedence last = assertInstanceOf(IrTraitPrecedence.class, use.adaptations().get(2));
-        assertName(last.method().trait(), "\\Traits\\A", NameForm.FULLY_QUALIFIED);
-        assertName(last.insteadOf().getFirst(), "namespace\\B", NameForm.NAMESPACE_RELATIVE);
+        assertName(last.method().trait(), "Traits\\A", NameForm.FULLY_QUALIFIED);
+        assertName(last.insteadOf().getFirst(), "B", NameForm.NAMESPACE_RELATIVE);
     }
 
     // 语法允许的 static/abstract/final alias 修饰符照常保留，不在 IR 转换时补 PHP 编译检查。
@@ -704,9 +705,9 @@ class AnonymousClassConversionTest {
         return assertInstanceOf(IrExpressionStatement.class, body.statements().get(index)).expression();
     }
 
-    private static void assertName(NameReference name, String spelling, NameForm form) {
+    private static void assertName(IrNameReference name, String value, NameForm form) {
         assertNotNull(name);
-        assertEquals(spelling, name.spelling());
+        assertEquals(value, name.value());
         assertEquals(form, name.form());
     }
 
@@ -726,7 +727,7 @@ class AnonymousClassConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         return call;
     }
 

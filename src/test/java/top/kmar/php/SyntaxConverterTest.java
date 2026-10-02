@@ -55,13 +55,13 @@ class SyntaxConverterTest {
         for (String value : List.of("null", "NuLl", "\\NULL")) {
             assertInstanceOf(IrNullLiteral.class, expression(value), value);
         }
-        assertConstant("SOME_VALUE", NameForm.UNQUALIFIED);
-        assertConstant("Some\\Value", NameForm.QUALIFIED);
-        assertConstant("\\Some\\Value", NameForm.FULLY_QUALIFIED);
-        assertConstant("namespace\\Value", NameForm.NAMESPACE_RELATIVE);
-        assertConstant("Some\\true", NameForm.QUALIFIED);
-        assertConstant("\\Some\\null", NameForm.FULLY_QUALIFIED);
-        assertConstant("namespace\\false", NameForm.NAMESPACE_RELATIVE);
+        assertConstant("SOME_VALUE", "SOME_VALUE", NameForm.UNQUALIFIED);
+        assertConstant("Some\\Value", "Some\\Value", NameForm.QUALIFIED);
+        assertConstant("\\Some\\Value", "Some\\Value", NameForm.FULLY_QUALIFIED);
+        assertConstant("namespace\\Value", "Value", NameForm.NAMESPACE_RELATIVE);
+        assertConstant("Some\\true", "Some\\true", NameForm.QUALIFIED);
+        assertConstant("\\Some\\null", "Some\\null", NameForm.FULLY_QUALIFIED);
+        assertConstant("namespace\\false", "false", NameForm.NAMESPACE_RELATIVE);
     }
 
     // 普通变量读取与赋值目标是不同模型；连续赋值保持右结合及原变量名。
@@ -228,7 +228,11 @@ class SyntaxConverterTest {
                 "\\Vendor\\run", NameForm.FULLY_QUALIFIED, "namespace\\run", NameForm.NAMESPACE_RELATIVE);
         names.forEach((name, form) -> {
             IrCall call = assertInstanceOf(IrCall.class, expression(name + "($a, 2, nested())"));
-            assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+            String value = switch (form) {
+                case UNQUALIFIED, NAMESPACE_RELATIVE -> "run";
+                case QUALIFIED, FULLY_QUALIFIED -> "Vendor\\run";
+            };
+            assertEquals(value, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
             assertEquals(form, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().form());
             assertEquals(3, call.arguments().size());
             assertEquals("a", fixedName(assertInstanceOf(IrVariable.class, call.arguments().getFirst().expression()).name()));
@@ -242,13 +246,13 @@ class SyntaxConverterTest {
     void preservesAssignmentsWithinOrderedCallArguments() {
         IrCall call = assertInstanceOf(IrCall.class,
                 expression("dispatch($a = first(), second($b = third()), $a)"));
-        assertEquals("dispatch", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals("dispatch", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(3, call.arguments().size());
         IrAssignment first = assertInstanceOf(IrAssignment.class, call.arguments().getFirst().expression());
         assertEquals("a", fixedName(assertInstanceOf(IrVariableTarget.class, first.target()).name()));
         assertEmptyCall(first.value(), "first");
         IrCall second = assertInstanceOf(IrCall.class, call.arguments().get(1).expression());
-        assertEquals("second", assertInstanceOf(IrNamedCallTarget.class, second.target()).name().spelling());
+        assertEquals("second", assertInstanceOf(IrNamedCallTarget.class, second.target()).name().value());
         assertEquals(1, second.arguments().size());
         IrAssignment nested = assertInstanceOf(IrAssignment.class, second.arguments().getFirst().expression());
         assertEquals("b", fixedName(assertInstanceOf(IrVariableTarget.class, nested.target()).name()));
@@ -512,7 +516,7 @@ class SyntaxConverterTest {
 
     private static void assertEmptyCall(IrExpression actual, String name) {
         IrCall call = assertInstanceOf(IrCall.class, actual);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(NameForm.UNQUALIFIED, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().form());
         assertTrue(call.arguments().isEmpty());
     }
@@ -531,9 +535,9 @@ class SyntaxConverterTest {
         }
     }
 
-    private static void assertConstant(String spelling, NameForm form) {
+    private static void assertConstant(String spelling, String value, NameForm form) {
         IrConstantReference constant = assertInstanceOf(IrConstantReference.class, expression(spelling));
-        assertEquals(spelling, constant.name().spelling());
+        assertEquals(value, constant.name().value());
         assertEquals(form, constant.name().form());
     }
 

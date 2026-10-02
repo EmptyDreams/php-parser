@@ -5,7 +5,6 @@ import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.NameForm;
-import top.kmar.php.model.NameReference;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -79,13 +78,11 @@ final class CallableSignatureConverter {
         return new IrTypeReference(name, nullable, context.source(node));
     }
 
-    private IrTypeName typeName(NameReference name) {
+    private IrTypeName typeName(IrNameReference name) {
         if (name.form() != NameForm.UNQUALIFIED && name.form() != NameForm.NAMESPACE_RELATIVE) {
             return new IrNamedType(name);
         }
-        String component = name.form() == NameForm.NAMESPACE_RELATIVE
-                ? name.spelling().substring(name.spelling().indexOf('\\') + 1) : name.spelling();
-        String spelling = normalizedAsciiName(component);
+        String spelling = normalizedAsciiName(name.value());
         if (spelling == null) return new IrNamedType(name);
         // PHP 7.2 对 namespace\self／namespace\parent 也使用所属类上下文。
         if (spelling.equals("self")) return new IrSpecialType(SpecialTypeKind.SELF, name.source());

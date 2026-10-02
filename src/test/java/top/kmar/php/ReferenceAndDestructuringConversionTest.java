@@ -47,7 +47,7 @@ class ReferenceAndDestructuringConversionTest {
         assertVariable(assertInstanceOf(IrComputedName.class, target.property()).expression(), "field");
         IrStaticPropertyTarget value = assertInstanceOf(IrStaticPropertyTarget.class, staticReference.reference());
         assertEquals("value", assertInstanceOf(IrFixedName.class, value.property()).value());
-        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, value.classReference()).name().spelling());
+        assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, value.classReference()).name().value());
     }
 
     // 普通、动态、实例和静态调用可作为引用来源，不要求解析其返回声明或执行调用。
@@ -591,7 +591,7 @@ class ReferenceAndDestructuringConversionTest {
 
     private static void assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertTrue(call.arguments().isEmpty());
     }
 

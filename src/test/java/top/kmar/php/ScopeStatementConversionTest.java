@@ -103,7 +103,7 @@ class ScopeStatementConversionTest {
         assertEquals(2, assertInstanceOf(IrArrayLiteral.class,
                 statement.variables().get(2).initializer()).entries().size());
         assertEquals("LIMIT", assertInstanceOf(IrConstantReference.class,
-                statement.variables().get(3).initializer()).name().spelling());
+                statement.variables().get(3).initializer()).name().value());
         assertVariable(statement.variables().get(4).initializer(), "outer");
         assertCall(statement.variables().get(5).initializer(), "nextValue");
         assertInstanceOf(IrNew.class, statement.variables().get(6).initializer());
@@ -492,7 +492,7 @@ class ScopeStatementConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         return call;
     }
 

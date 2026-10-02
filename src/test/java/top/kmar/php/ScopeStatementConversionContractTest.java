@@ -277,8 +277,10 @@ class ScopeStatementConversionContractTest {
         IrGlobal global = assertInstanceOf(IrGlobal.class, convert(globals(named, dynamic)));
         assertSource(OUTER, global.source());
         assertSource(ENTRY, global.variables().getFirst().source());
+        assertSame(global.variables().getFirst().name().source(), global.variables().getFirst().source());
         assertSource(BODY, global.variables().get(1).source());
         IrComputedName computed = assertInstanceOf(IrComputedName.class, global.variables().get(1).name());
+        assertSame(computed.source(), global.variables().get(1).source());
         assertSource(VALUE, computed.expression().source());
 
         IrStaticVariables variables = assertInstanceOf(IrStaticVariables.class, convert(statics(
@@ -407,7 +409,7 @@ class ScopeStatementConversionContractTest {
     }
 
     private static IrVariableTarget irTarget(String name) {
-        return new IrVariableTarget(new IrFixedName(name, SOURCE), SOURCE);
+        return new IrVariableTarget(new IrFixedName(name, SOURCE));
     }
 
     private static IrStatement convert(NodeStatement statement) {

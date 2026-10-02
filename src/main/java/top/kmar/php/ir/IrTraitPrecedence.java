@@ -1,13 +1,12 @@
 package top.kmar.php.ir;
 
-import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SourceInfo;
 
 import java.util.List;
 import java.util.Objects;
 
 /** 显式 trait 方法的优先规则；被排除的 trait 保留源码顺序和重复项。 */
-public record IrTraitPrecedence(IrTraitMethodReference method, List<NameReference> insteadOf, SourceInfo source)
+public record IrTraitPrecedence(IrTraitMethodReference method, List<IrNameReference> insteadOf, SourceInfo source)
         implements IrTraitAdaptation {
     public IrTraitPrecedence {
         Objects.requireNonNull(method, "method");

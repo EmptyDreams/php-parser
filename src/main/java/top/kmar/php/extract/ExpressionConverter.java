@@ -5,7 +5,6 @@ import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.NameForm;
-import top.kmar.php.model.NameReference;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -402,9 +401,8 @@ final class ExpressionConverter {
         if (!(node instanceof NodeConstant.NamedConstant)) {
             throw context.error(node, path, "无法识别的常量结构");
         }
-        NameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
-        String spelling = name.spelling();
-        String component = name.form() == NameForm.FULLY_QUALIFIED ? spelling.substring(1) : spelling;
+        IrNameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
+        String component = name.value();
         // 仅全局单段名称可识别为内置字面量；N\true、namespace\true 等仍是名称引用。
         if ((name.form() == NameForm.UNQUALIFIED || name.form() == NameForm.FULLY_QUALIFIED)
                 && component.indexOf('\\') < 0) {
@@ -543,7 +541,7 @@ final class ExpressionConverter {
 
     private IrExpressionWriteBase expressionWriteBase(IrExpression expression) {
         // 此处只接收已按读取规则转换的调用，其接收者、实参不会继承外层写上下文。
-        return new IrExpressionWriteBase(expression, expression.source());
+        return new IrExpressionWriteBase(expression);
     }
 
     private IrWriteBase dereferencableWriteBase(NodeDereferencable node, String path, boolean allowAppend) {
@@ -602,7 +600,7 @@ final class ExpressionConverter {
 
     /** global 和普通变量写目标共用名称转换；计算名称时仍读取表达式。 */
     IrVariableTarget simpleVariableTarget(NodeSimpleVariable node, String path) {
-        return new IrVariableTarget(variableName(node, path), context.source(node));
+        return new IrVariableTarget(variableName(node, path));
     }
 
     /** 变量自身及静态属性共享名称规则：C::$p 是固定名称，C::$$p 才读取 $p 计算名称。 */
@@ -703,9 +701,9 @@ final class ExpressionConverter {
         if (!(node instanceof NodeClassName.NamedClass)) {
             throw context.error(node, path, "无法识别的类名称结构");
         }
-        NameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
+        IrNameReference name = context.name(context.required(node.getN(), node, path + ".n"), path + ".n");
         if (name.form() == NameForm.UNQUALIFIED) {
-            SpecialClassKind kind = switch (name.spelling().toLowerCase(Locale.ROOT)) {
+            SpecialClassKind kind = switch (name.value().toLowerCase(Locale.ROOT)) {
                 case "self" -> SpecialClassKind.SELF;
                 case "parent" -> SpecialClassKind.PARENT;
                 case "static" -> SpecialClassKind.STATIC;
@@ -768,7 +766,7 @@ final class ExpressionConverter {
     }
 
     private IrNamedCallTarget namedCallTarget(NodeName node, String path) {
-        return new IrNamedCallTarget(context.name(node, path), context.source(node));
+        return new IrNamedCallTarget(context.name(node, path));
     }
 
     private IrExpressionCallTarget expressionCallTarget(NodeCallableExpr node, String path) {

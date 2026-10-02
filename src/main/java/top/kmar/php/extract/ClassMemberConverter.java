@@ -5,7 +5,6 @@ import org.jetbrains.annotations.Nullable;
 import top.kmar.php.*;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.Modifier;
-import top.kmar.php.model.NameReference;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -139,9 +138,9 @@ final class ClassMemberConverter {
         return modifier;
     }
 
-    private List<NameReference> names(NodeListNodeName list, String path) {
+    private List<IrNameReference> names(NodeListNodeName list, String path) {
         var values = nonEmpty(context.elements(list.getValue(), list, path), list, path);
-        var result = new ArrayList<NameReference>(values.size());
+        var result = new ArrayList<IrNameReference>(values.size());
         for (int i = 0; i < values.size(); i++) result.add(context.name(values.get(i), path + "[" + i + "]"));
         return result;
     }

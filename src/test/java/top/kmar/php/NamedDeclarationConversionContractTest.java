@@ -354,7 +354,7 @@ class NamedDeclarationConversionContractTest {
     void rejectsNullElementsInEveryDeclarationModelList() {
         IrBlock body = new IrBlock(List.of(), SOURCE);
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
-        var name = new NameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
+        var name = new IrNameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
         var member = new IrProperty("value", List.of(), null, SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrFunctionDeclaration("run", Arrays.asList(parameter, null), null, false, body, SOURCE),
@@ -375,7 +375,7 @@ class NamedDeclarationConversionContractTest {
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
         var parameters = new ArrayList<>(List.of(parameter, parameter));
         var flags = new ArrayList<>(List.of(Modifier.ABSTRACT, Modifier.ABSTRACT, Modifier.FINAL));
-        var name = new NameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
+        var name = new IrNameReference("Parent", NameForm.UNQUALIFIED, SOURCE);
         var names = new ArrayList<>(List.of(name, name));
         IrClassMember member = new IrProperty("value", List.of(), null, SOURCE);
         var members = new ArrayList<>(List.of(member, member));

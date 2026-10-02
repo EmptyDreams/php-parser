@@ -5,7 +5,6 @@ import top.kmar.php.extract.SyntaxConversionException;
 import top.kmar.php.extract.SyntaxConverter;
 import top.kmar.php.ir.*;
 import top.kmar.php.model.NameForm;
-import top.kmar.php.model.NameReference;
 import top.kmar.php.model.SourceInfo;
 import top.kmar.php.model.SyntaxBody;
 
@@ -161,20 +160,20 @@ class ControlFlowConversionTest {
         assertEquals(3, statement.catches().size());
         IrCatch first = statement.catches().getFirst();
         assertEquals("Err", first.variableName());
-        assertEquals(List.of("Basic", "Vendor\\Failure", "\\Root\\Error", "namespace\\Local"),
-                first.exceptionTypes().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Basic", "Vendor\\Failure", "Root\\Error", "Local"),
+                first.exceptionTypes().stream().map(IrNameReference::value).toList());
         assertEquals(List.of(NameForm.UNQUALIFIED, NameForm.QUALIFIED,
                         NameForm.FULLY_QUALIFIED, NameForm.NAMESPACE_RELATIVE),
-                first.exceptionTypes().stream().map(NameReference::form).toList());
+                first.exceptionTypes().stream().map(IrNameReference::form).toList());
         assertOnlyEcho(first.body(), 1);
         IrCatch second = statement.catches().get(1);
         assertEquals("fallback", second.variableName());
-        assertEquals(List.of("Fallback"), second.exceptionTypes().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Fallback"), second.exceptionTypes().stream().map(IrNameReference::value).toList());
         assertEquals(1, second.body().statements().size());
         assertVariable(assertInstanceOf(IrReturn.class, second.body().statements().getFirst()).value(), "fallback");
         IrCatch third = statement.catches().get(2);
         assertEquals("last", third.variableName());
-        assertEquals(List.of("Missing", "Missing"), third.exceptionTypes().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Missing", "Missing"), third.exceptionTypes().stream().map(IrNameReference::value).toList());
         assertTrue(third.body().statements().isEmpty());
     }
 
@@ -186,7 +185,7 @@ class ControlFlowConversionTest {
         assertVariable(assertInstanceOf(IrThrow.class, statements.getFirst()).expression(), "error");
         IrNew exception = assertInstanceOf(IrNew.class, assertInstanceOf(IrThrow.class, statements.get(1)).expression());
         IrNamedClassReference reference = assertInstanceOf(IrNamedClassReference.class, exception.classReference());
-        assertEquals("\\RuntimeException", reference.name().spelling());
+        assertEquals("RuntimeException", reference.name().value());
         assertEquals(NameForm.FULLY_QUALIFIED, reference.name().form());
         assertEquals(2, exception.arguments().size());
         assertCall(exception.arguments().getFirst().expression(), "message", 0);
@@ -230,7 +229,7 @@ class ControlFlowConversionTest {
         assertInteger(next.levels(), 2);
         IrNew failure = assertInstanceOf(IrNew.class,
                 assertInstanceOf(IrThrow.class, attempt.body().statements().get(1)).expression());
-        assertEquals("Problem", assertInstanceOf(IrNamedClassReference.class, failure.classReference()).name().spelling());
+        assertEquals("Problem", assertInstanceOf(IrNamedClassReference.class, failure.classReference()).name().value());
         assertEquals(1, failure.arguments().size());
         assertVariable(failure.arguments().getFirst().expression(), "state");
         assertEquals(1, attempt.catches().size());
@@ -361,7 +360,7 @@ class ControlFlowConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String expectedName, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(expectedName, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(expectedName, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }

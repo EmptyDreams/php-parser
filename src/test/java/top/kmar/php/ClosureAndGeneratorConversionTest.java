@@ -55,7 +55,7 @@ class ClosureAndGeneratorConversionTest {
         assertTrue(ordinaryReference.parameters().getFirst().variadic());
     }
 
-    // 类型声明保留可空标记和具名类型写法，array/callable 归一为明确的内置类型。
+    // 类型声明保留可空标记，具名类型分开保存名称主体和限定形式，array/callable 归一为内置类型。
     @Test
     void preservesParameterAndReturnTypeForms() {
         IrClosure closure = closure("function (?Thing $a, Vendor\\Thing $b, \\Root\\Thing $c, "
@@ -64,15 +64,15 @@ class ClosureAndGeneratorConversionTest {
         assertEquals(6, parameters.size());
         assertNamedType(parameters.get(0).declaredType(), "Thing", NameForm.UNQUALIFIED, true);
         assertNamedType(parameters.get(1).declaredType(), "Vendor\\Thing", NameForm.QUALIFIED, false);
-        assertNamedType(parameters.get(2).declaredType(), "\\Root\\Thing", NameForm.FULLY_QUALIFIED, false);
-        assertNamedType(parameters.get(3).declaredType(), "namespace\\Thing", NameForm.NAMESPACE_RELATIVE, false);
+        assertNamedType(parameters.get(2).declaredType(), "Root\\Thing", NameForm.FULLY_QUALIFIED, false);
+        assertNamedType(parameters.get(3).declaredType(), "Thing", NameForm.NAMESPACE_RELATIVE, false);
         assertBuiltinType(parameters.get(4).declaredType(), BuiltinTypeKind.ARRAY, false);
         assertBuiltinType(parameters.get(5).declaredType(), BuiltinTypeKind.CALLABLE, true);
-        assertNamedType(closure.returnType(), "\\Result\\Value", NameForm.FULLY_QUALIFIED, true);
+        assertNamedType(closure.returnType(), "Result\\Value", NameForm.FULLY_QUALIFIED, true);
         assertBuiltinType(closure("function(): array {}").returnType(), BuiltinTypeKind.ARRAY, false);
         assertBuiltinType(closure("function(): callable {}").returnType(), BuiltinTypeKind.CALLABLE, false);
         assertNamedType(closure("function(): namespace\\Result {}").returnType(),
-                "namespace\\Result", NameForm.NAMESPACE_RELATIVE, false);
+                "Result", NameForm.NAMESPACE_RELATIVE, false);
     }
 
     // 默认值递归进入现有表达式模型，未声明默认值与显式 null 必须区分。
@@ -394,10 +394,10 @@ class ClosureAndGeneratorConversionTest {
         return assertInstanceOf(IrExpressionStatement.class, body.statements().get(index)).expression();
     }
 
-    private static void assertNamedType(IrTypeReference type, String spelling, NameForm form, boolean nullable) {
+    private static void assertNamedType(IrTypeReference type, String value, NameForm form, boolean nullable) {
         assertNotNull(type);
         IrNamedType named = assertInstanceOf(IrNamedType.class, type.type());
-        assertEquals(spelling, named.name().spelling());
+        assertEquals(value, named.name().value());
         assertEquals(form, named.name().form());
         assertEquals(nullable, type.nullable());
     }
@@ -431,7 +431,7 @@ class ClosureAndGeneratorConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }

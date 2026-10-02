@@ -18,6 +18,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 验证布尔和 null 的强类型规范化不改变名称分类、缺省值、来源及 AST 契约。 */
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 class BooleanAndNullLiteralConversionTest {
     private static final ComplexLocation WRAPPER = ComplexLocation.of(2, 1, 2, 30);
     private static final ComplexLocation CONSTANT = ComplexLocation.of(2, 3, 2, 25);
@@ -58,7 +59,12 @@ class BooleanAndNullLiteralConversionTest {
                 Map.entry("\\fal\u017Fe", NameForm.FULLY_QUALIFIED));
         names.forEach((spelling, form) -> {
             IrConstantReference reference = assertInstanceOf(IrConstantReference.class, expression(spelling), spelling);
-            assertEquals(spelling, reference.name().spelling());
+            String value = switch (form) {
+                case FULLY_QUALIFIED -> spelling.substring(1);
+                case NAMESPACE_RELATIVE -> spelling.substring("namespace\\".length());
+                case UNQUALIFIED, QUALIFIED -> spelling;
+            };
+            assertEquals(value, reference.name().value());
             assertEquals(form, reference.name().form());
         });
     }
@@ -70,15 +76,17 @@ class BooleanAndNullLiteralConversionTest {
             IrClassConstantReference constant = assertInstanceOf(IrClassConstantReference.class,
                     expression("Box::" + spelling));
             assertEquals(spelling, constant.constantName());
-            assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, constant.classReference()).name().spelling());
+            assertEquals("Box", assertInstanceOf(IrNamedClassReference.class, constant.classReference()).name().value());
         }
         IrClassConstantReference dynamic = assertInstanceOf(IrClassConstantReference.class, expression("$type::TRUE"));
         assertEquals("TRUE", dynamic.constantName());
         assertInstanceOf(IrDynamicClassReference.class, dynamic.classReference());
         IrCall call = assertInstanceOf(IrCall.class, expression("\\TRUE()"));
-        assertEquals("\\TRUE", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        IrNameReference callName = assertInstanceOf(IrNamedCallTarget.class, call.target()).name();
+        assertEquals("TRUE", callName.value());
+        assertEquals(NameForm.FULLY_QUALIFIED, callName.form());
         IrNew creation = assertInstanceOf(IrNew.class, expression("new FALSE()"));
-        assertEquals("FALSE", assertInstanceOf(IrNamedClassReference.class, creation.classReference()).name().spelling());
+        assertEquals("FALSE", assertInstanceOf(IrNamedClassReference.class, creation.classReference()).name().value());
     }
 
     // 整文件、选定正文和单表达式入口使用同一规范化规则，结果及实际节点来源保持一致。

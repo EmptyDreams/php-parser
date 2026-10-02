@@ -11,6 +11,7 @@ import top.kmar.php.model.SyntaxExpression;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -180,14 +181,23 @@ class DynamicConversionTest {
         assertTrue(array.entries().isEmpty());
     }
 
-    // 具名函数保留名称形式，变量、括号、字符串和数组 callable 则保留其表达式。
+    // 具名函数分开保存名称主体和限定形式，变量、括号、字符串和数组 callable 则保留其表达式。
     @Test
     void distinguishesNamedAndExpressionCallTargets() {
-        for (String name : List.of("run", "Tools\\run", "\\Tools\\run", "namespace\\run")) {
+        Map<String, NameForm> names = Map.of(
+                "run", NameForm.UNQUALIFIED, "Tools\\run", NameForm.QUALIFIED,
+                "\\Tools\\run", NameForm.FULLY_QUALIFIED, "namespace\\run", NameForm.NAMESPACE_RELATIVE);
+        names.forEach((name, form) -> {
             IrCall call = assertInstanceOf(IrCall.class, expression(name + "()"));
-            assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+            IrNameReference reference = assertInstanceOf(IrNamedCallTarget.class, call.target()).name();
+            String value = switch (form) {
+                case UNQUALIFIED, NAMESPACE_RELATIVE -> "run";
+                case QUALIFIED, FULLY_QUALIFIED -> "Tools\\run";
+            };
+            assertEquals(value, reference.value());
+            assertEquals(form, reference.form());
             assertTrue(call.arguments().isEmpty());
-        }
+        });
         assertVariable(callable(assertInstanceOf(IrCall.class, expression("$callback()"))), "callback");
         assertVariable(callable(assertInstanceOf(IrCall.class, expression("($callback)()"))), "callback");
         assertString(callable(assertInstanceOf(IrCall.class, expression("'run'()"))), "run");
@@ -462,9 +472,9 @@ class DynamicConversionTest {
         return assertInstanceOf(IrNew.class, expression).arguments();
     }
 
-    private static void assertNamedClass(IrClassReference reference, String spelling) {
+    private static void assertNamedClass(IrClassReference reference, String value) {
         IrNamedClassReference named = assertInstanceOf(IrNamedClassReference.class, reference);
-        assertEquals(spelling, named.name().spelling());
+        assertEquals(value, named.name().value());
         assertEquals(NameForm.UNQUALIFIED, named.name().form());
     }
 
@@ -478,7 +488,7 @@ class DynamicConversionTest {
 
     private static void assertCall(IrExpression expression, String expected) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(expected, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(expected, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertTrue(call.arguments().isEmpty());
     }
 

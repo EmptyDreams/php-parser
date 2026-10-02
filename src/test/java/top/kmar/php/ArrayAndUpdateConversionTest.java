@@ -155,10 +155,10 @@ class ArrayAndUpdateConversionTest {
 
         assertString("text", index("'text'[1]").base());
         IrConstantReference constant = assertInstanceOf(IrConstantReference.class, index("ITEMS[0]").base());
-        assertEquals("ITEMS", constant.name().spelling());
+        assertEquals("ITEMS", constant.name().value());
         assertEquals(NameForm.UNQUALIFIED, constant.name().form());
         IrConstantReference qualified = assertInstanceOf(IrConstantReference.class, index("\\Demo\\ITEMS[0]").base());
-        assertEquals("\\Demo\\ITEMS", qualified.name().spelling());
+        assertEquals("Demo\\ITEMS", qualified.name().value());
         assertEquals(NameForm.FULLY_QUALIFIED, qualified.name().form());
 
         assertVariable("items", index("($items)[0]").base());
@@ -395,7 +395,7 @@ class ArrayAndUpdateConversionTest {
 
     private static void assertCall(String expected, IrExpression expression) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(expected, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(expected, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertTrue(call.arguments().isEmpty());
     }
 

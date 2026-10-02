@@ -231,7 +231,7 @@ class BuiltinConversionContractTest {
                 () -> new IrIsset(null, SOURCE),
                 () -> new IrIsset(List.of(expression), null),
                 () -> new IrUnset(null, SOURCE),
-                () -> new IrUnset(List.of(new IrVariableTarget(new IrFixedName("value", SOURCE), SOURCE)), null),
+                () -> new IrUnset(List.of(new IrVariableTarget(new IrFixedName("value", SOURCE))), null),
                 () -> new IrEmptyCheck(null, SOURCE),
                 () -> new IrEmptyCheck(expression, null),
                 () -> new IrCast(null, expression, SOURCE),
@@ -260,7 +260,7 @@ class BuiltinConversionContractTest {
         IrExpression expression = new IrIntegerLiteral(1, SOURCE);
         var expressions = new ArrayList<>(List.of(expression, expression));
         IrIsset check = new IrIsset(expressions, SOURCE);
-        IrVariableTarget target = new IrVariableTarget(new IrFixedName("value", SOURCE), SOURCE);
+        IrVariableTarget target = new IrVariableTarget(new IrFixedName("value", SOURCE));
         var targets = new ArrayList<IrAssignmentTarget>(List.of(target, target));
         IrUnset deletion = new IrUnset(targets, SOURCE);
         expressions.clear();

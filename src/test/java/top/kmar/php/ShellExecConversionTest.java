@@ -16,6 +16,7 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 仅解析并转换反引号表达式的命令文本，测试不执行 PHP、shell 或任何命令。 */
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 class ShellExecConversionTest {
     private static final String BACKTICK = Character.toString(96);
 
@@ -397,7 +398,7 @@ class ShellExecConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name, int argumentCount) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertEquals(argumentCount, call.arguments().size());
         return call;
     }

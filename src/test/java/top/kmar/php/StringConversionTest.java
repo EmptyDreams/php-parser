@@ -18,6 +18,7 @@ import java.util.stream.IntStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 从真实 PHP AST 验证字符串字节解码、插值结构和不求值的魔术常量。 */
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 class StringConversionTest {
 
     // 单引号只解码反斜杠和单引号，其余转义原样保留，不尝试插值。
@@ -220,7 +221,7 @@ class StringConversionTest {
         assertVariable(property.receiver(), "object");
         assertVariable(assertInstanceOf(IrComputedName.class, property.property()).expression(), "field");
         IrCall call = assertInstanceOf(IrCall.class, index.index());
-        assertEquals("next", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals("next", assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertTrue(call.arguments().isEmpty());
         IrMethodCall method = assertInstanceOf(IrMethodCall.class,
                 interpolation(template("\"{$object->run()}\""), 0));

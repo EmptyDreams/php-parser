@@ -357,7 +357,7 @@ class AnonymousClassConversionContractTest {
     void validatesAllRequiredModelFields() {
         IrAnonymousClass definition = new IrAnonymousClass(null, List.of(), List.of(), SOURCE);
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
-        NameReference trait = irName("Trait");
+        IrNameReference trait = irName("Trait");
         IrTraitMethodReference reference = new IrTraitMethodReference(trait, "run", SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrNewAnonymous(null, List.of(), SOURCE), () -> new IrNewAnonymous(definition, null, SOURCE),
@@ -392,7 +392,7 @@ class AnonymousClassConversionContractTest {
     @Test
     void validatesStructuralModelInvariantsWithoutSemanticNormalization() {
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
-        NameReference trait = irName("Trait");
+        IrNameReference trait = irName("Trait");
         IrTraitMethodReference reference = new IrTraitMethodReference(trait, "run", SOURCE);
         for (Executable constructor : List.<Executable>of(
                 () -> new IrMethod("", List.of(), List.of(), null, false, null, SOURCE),
@@ -417,7 +417,7 @@ class AnonymousClassConversionContractTest {
     // 每一种列表都拒绝 null 元素，避免将损坏记录留到下游遍历时才发现。
     @Test
     void rejectsNullElementsInAllModelLists() {
-        NameReference trait = irName("Trait");
+        IrNameReference trait = irName("Trait");
         IrExpression value = new IrIntegerLiteral(1, SOURCE);
         IrAnonymousClass definition = new IrAnonymousClass(null, List.of(), List.of(), SOURCE);
         IrTraitMethodReference reference = new IrTraitMethodReference(trait, "run", SOURCE);
@@ -440,7 +440,7 @@ class AnonymousClassConversionContractTest {
     // 类、成员、实参和 trait 规则均保存有序只读快照，源列表修改不会改变已生成结果。
     @Test
     void snapshotsEveryModelListAndPreservesDuplicates() {
-        NameReference trait = irName("Trait");
+        IrNameReference trait = irName("Trait");
         var flags = new ArrayList<>(List.of(Modifier.PUBLIC, Modifier.PUBLIC));
         var parameter = new IrParameter("value", null, false, false, null, SOURCE);
         var parameters = new ArrayList<>(List.of(parameter, parameter));
@@ -665,7 +665,7 @@ class AnonymousClassConversionContractTest {
         assertRuleFailure(new NodeTraitAdaptation.Precedence(precedence, GROUP), suffix);
     }
 
-    private static NameReference irName(String name) { return new NameReference(name, NameForm.UNQUALIFIED, SOURCE); }
+    private static IrNameReference irName(String name) { return new IrNameReference(name, NameForm.UNQUALIFIED, SOURCE); }
 
     private static void assertContainsFailure(NodeAnonymousClass definition, String field) {
         var error = assertThrows(SyntaxConversionException.class, () -> convert(definition));

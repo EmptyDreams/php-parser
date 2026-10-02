@@ -248,8 +248,8 @@ class FileConversionTest {
                 assertInstanceOf(IrExpressionStatement.class, values.body().statements().getFirst()).expression());
         assertInteger(yield.value(), 42);
         IrClassDeclaration worker = assertInstanceOf(IrClassDeclaration.class, statements.get(2));
-        assertEquals("Base", worker.parentType().spelling());
-        assertEquals("Feature", assertInstanceOf(IrTraitUse.class, worker.members().getFirst()).traits().getFirst().spelling());
+        assertEquals("Base", worker.parentType().value());
+        assertEquals("Feature", assertInstanceOf(IrTraitUse.class, worker.members().getFirst()).traits().getFirst().value());
         assertEquals("Contract", assertInstanceOf(IrInterfaceDeclaration.class, statements.get(3)).name());
         assertEquals("Feature", assertInstanceOf(IrTraitDeclaration.class, statements.get(4)).name());
     }
@@ -268,12 +268,12 @@ class FileConversionTest {
                 """), 0);
         IrClassDeclaration local = assertInstanceOf(IrClassDeclaration.class, statements.get(3));
         assertEquals("Local", local.name());
-        assertEquals("Alias", local.parentType().spelling());
+        assertEquals("Alias", local.parentType().value());
         assertEquals(NameForm.UNQUALIFIED, local.parentType().form());
         IrConstantDeclaration constant = assertInstanceOf(IrConstantDeclaration.class, statements.get(4));
         assertEquals("COUNT", constant.name());
         IrConstantReference reference = assertInstanceOf(IrConstantReference.class, constant.value());
-        assertEquals("LIMIT", reference.name().spelling());
+        assertEquals("LIMIT", reference.name().value());
         assertCall(assertInstanceOf(IrExpressionStatement.class, statements.get(5)).expression(), "create");
     }
 
@@ -458,7 +458,7 @@ class FileConversionTest {
 
     private static IrCall assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         return call;
     }
 }

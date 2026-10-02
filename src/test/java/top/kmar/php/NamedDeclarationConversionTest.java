@@ -92,7 +92,7 @@ class NamedDeclarationConversionTest {
         assertNotNull(value.declaredType());
         assertTrue(value.declaredType().nullable());
         assertName(assertInstanceOf(IrNamedType.class, value.declaredType().type()).name(),
-                "\\Pkg\\Value", NameForm.FULLY_QUALIFIED);
+                "Pkg\\Value", NameForm.FULLY_QUALIFIED);
         assertInstanceOf(IrNullLiteral.class, value.defaultValue());
         IrParameter items = function.parameters().get(2);
         assertNotNull(items.declaredType());
@@ -115,7 +115,7 @@ class NamedDeclarationConversionTest {
         assertNotNull(function.returnType());
         assertTrue(function.returnType().nullable());
         assertName(assertInstanceOf(IrNamedType.class, function.returnType().type()).name(),
-                "namespace\\Result", NameForm.NAMESPACE_RELATIVE);
+                "Result", NameForm.NAMESPACE_RELATIVE);
         assertVariable(assertInstanceOf(IrReturn.class, function.body().statements().getFirst()).value(), "value");
     }
 
@@ -128,18 +128,20 @@ class NamedDeclarationConversionTest {
                 """));
         assertEquals("Mixed", clazz.name());
         assertEquals(List.of(Modifier.ABSTRACT, Modifier.FINAL, Modifier.ABSTRACT), clazz.declaredModifiers());
-        assertName(clazz.parentType(), "\\Base", NameForm.FULLY_QUALIFIED);
+        assertName(clazz.parentType(), "Base", NameForm.FULLY_QUALIFIED);
         assertEquals(5, clazz.interfaces().size());
         assertName(clazz.interfaces().getFirst(), "Local", NameForm.UNQUALIFIED);
         assertName(clazz.interfaces().get(1), "Rel\\Contract", NameForm.QUALIFIED);
-        assertName(clazz.interfaces().get(2), "\\Root\\Contract", NameForm.FULLY_QUALIFIED);
-        assertName(clazz.interfaces().get(3), "namespace\\Contract", NameForm.NAMESPACE_RELATIVE);
+        assertName(clazz.interfaces().get(2), "Root\\Contract", NameForm.FULLY_QUALIFIED);
+        assertName(clazz.interfaces().get(3), "Contract", NameForm.NAMESPACE_RELATIVE);
         assertName(clazz.interfaces().get(4), "Local", NameForm.UNQUALIFIED);
-        for (String parent : List.of("Base", "Rel\\Base", "namespace\\Base")) {
+        for (String parent : List.of("Base", "Rel\\Base")) {
             var declaration = assertInstanceOf(IrClassDeclaration.class, only("class C extends " + parent + " {}"));
             assertNotNull(declaration.parentType());
-            assertEquals(parent, declaration.parentType().spelling());
+            assertEquals(parent, declaration.parentType().value());
         }
+        assertName(assertInstanceOf(IrClassDeclaration.class,
+                only("class C extends namespace\\Base {}")).parentType(), "Base", NameForm.NAMESPACE_RELATIVE);
     }
 
     // 接口继承是有序多父接口列表，不能套用类的单父类字段；方法分号体保持 null。
@@ -154,8 +156,8 @@ class NamedDeclarationConversionTest {
         assertEquals(5, iface.parentTypes().size());
         assertName(iface.parentTypes().getFirst(), "Local", NameForm.UNQUALIFIED);
         assertName(iface.parentTypes().get(1), "Rel\\Contract", NameForm.QUALIFIED);
-        assertName(iface.parentTypes().get(2), "\\Root\\Contract", NameForm.FULLY_QUALIFIED);
-        assertName(iface.parentTypes().get(3), "namespace\\Contract", NameForm.NAMESPACE_RELATIVE);
+        assertName(iface.parentTypes().get(2), "Root\\Contract", NameForm.FULLY_QUALIFIED);
+        assertName(iface.parentTypes().get(3), "Contract", NameForm.NAMESPACE_RELATIVE);
         assertName(iface.parentTypes().get(4), "Local", NameForm.UNQUALIFIED);
         assertEquals(3, iface.members().size());
         assertEquals("FIRST", assertInstanceOf(IrClassConstant.class, iface.members().getFirst()).name());
@@ -222,12 +224,12 @@ class NamedDeclarationConversionTest {
                 }
                 """));
         IrTraitUse use = assertInstanceOf(IrTraitUse.class, declaration.members().getFirst());
-        assertEquals(List.of("Feature", "Other", "Feature"), use.traits().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Feature", "Other", "Feature"), use.traits().stream().map(IrNameReference::value).toList());
         assertEquals(4, use.adaptations().size());
         IrTraitPrecedence precedence = assertInstanceOf(IrTraitPrecedence.class, use.adaptations().getFirst());
         assertName(precedence.method().trait(), "Feature", NameForm.UNQUALIFIED);
         assertEquals("work", precedence.method().method());
-        assertEquals(List.of("Other", "Other"), precedence.insteadOf().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("Other", "Other"), precedence.insteadOf().stream().map(IrNameReference::value).toList());
         IrTraitAlias alias = assertInstanceOf(IrTraitAlias.class, use.adaptations().get(1));
         assertEquals(Modifier.PROTECTED, alias.modifier());
         assertEquals("alias", alias.newName());
@@ -363,7 +365,7 @@ class NamedDeclarationConversionTest {
         assertEquals("InTry", assertInstanceOf(IrFunctionDeclaration.class, statement.body().statements().get(1)).name());
         assertEquals(1, statement.catches().size());
         IrCatch catcher = statement.catches().getFirst();
-        assertEquals(List.of("First", "Second"), catcher.exceptionTypes().stream().map(NameReference::spelling).toList());
+        assertEquals(List.of("First", "Second"), catcher.exceptionTypes().stream().map(IrNameReference::value).toList());
         assertEquals("caught", catcher.variableName());
         assertEquals(1, catcher.body().statements().size());
         assertEquals("InCatch", assertInstanceOf(IrClassDeclaration.class, catcher.body().statements().getFirst()).name());
@@ -482,9 +484,9 @@ class NamedDeclarationConversionTest {
         return new SyntaxBody(List.copyOf(program.getStmts().getValue()), new SourceInfo("named.php", null));
     }
 
-    private static void assertName(NameReference name, String spelling, NameForm form) {
+    private static void assertName(IrNameReference name, String value, NameForm form) {
         assertNotNull(name);
-        assertEquals(spelling, name.spelling());
+        assertEquals(value, name.value());
         assertEquals(form, name.form());
     }
 
@@ -504,6 +506,6 @@ class NamedDeclarationConversionTest {
 
     private static void assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
     }
 }

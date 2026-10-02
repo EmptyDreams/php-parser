@@ -18,6 +18,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /** 验证数字字面量在 IR 边界统一解码，不把表达式求值或名称解析混入转换。 */
+@SuppressWarnings("UnnecessaryUnicodeEscape")
 class NumericLiteralConversionTest {
 
     private static final ComplexLocation ERROR_LOCATION = ComplexLocation.of(3, 5, 3, 12);
@@ -150,10 +151,15 @@ class NumericLiteralConversionTest {
     void keepsSpecialValueNamesAsUnresolvedReferences() {
         for (String code : List.of("INF", "NAN", "\\INF", "\\NAN", "Some\\INF", "namespace\\NAN")) {
             IrConstantReference reference = assertInstanceOf(IrConstantReference.class, expression(code));
-            assertEquals(code, reference.name().spelling());
             NameForm form = code.startsWith("\\") ? NameForm.FULLY_QUALIFIED
                     : code.startsWith("namespace\\") ? NameForm.NAMESPACE_RELATIVE
                     : code.contains("\\") ? NameForm.QUALIFIED : NameForm.UNQUALIFIED;
+            String value = switch (form) {
+                case FULLY_QUALIFIED -> code.substring(1);
+                case NAMESPACE_RELATIVE -> "NAN";
+                case UNQUALIFIED, QUALIFIED -> code;
+            };
+            assertEquals(value, reference.name().value());
             assertEquals(form, reference.name().form());
         }
     }

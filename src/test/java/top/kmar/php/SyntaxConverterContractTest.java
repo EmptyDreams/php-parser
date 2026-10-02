@@ -246,7 +246,7 @@ class SyntaxConverterContractTest {
         expressions.add(new IrIntegerLiteral(1, source));
         var echo = new IrEcho(expressions, source);
         var arguments = new ArrayList<>(List.of(new IrArgument(expressions.getFirst(), false, source)));
-        var call = new IrCall(new IrNamedCallTarget(new NameReference("f", NameForm.UNQUALIFIED, source), source),
+        var call = new IrCall(new IrNamedCallTarget(new IrNameReference("f", NameForm.UNQUALIFIED, source)),
                 arguments, source);
         expressions.clear();
         arguments.clear();

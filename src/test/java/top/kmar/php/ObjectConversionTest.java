@@ -36,22 +36,27 @@ class ObjectConversionTest {
         assertInteger(assertInstanceOf(IrValueArrayEntry.class, array.entries().getFirst()).value(), 3);
     }
 
-    // 类引用保留原始限定形式；带前缀的 self/parent 仍是普通名称，不提前解析。
+    // 类引用分开保存名称主体与限定形式；带前缀的 self/parent 仍是普通名称，不提前解析。
     @Test
-    void preservesQualifiedClassNamesAndTheirSpelling() {
+    void preservesQualifiedClassNameValuesAndForms() {
         Map<String, NameForm> names = Map.of(
                 "Thing", NameForm.UNQUALIFIED, "Demo\\Thing", NameForm.QUALIFIED,
                 "\\Demo\\Thing", NameForm.FULLY_QUALIFIED, "namespace\\Thing", NameForm.NAMESPACE_RELATIVE,
                 "\\self", NameForm.FULLY_QUALIFIED, "Demo\\parent", NameForm.QUALIFIED,
                 "namespace\\self", NameForm.NAMESPACE_RELATIVE);
         names.forEach((name, form) -> {
-            assertNamedClass(assertInstanceOf(IrNew.class, expression("new " + name)).classReference(), name, form);
+            String value = switch (form) {
+                case FULLY_QUALIFIED -> name.substring(1);
+                case NAMESPACE_RELATIVE -> name.substring("namespace\\".length());
+                case UNQUALIFIED, QUALIFIED -> name;
+            };
+            assertNamedClass(assertInstanceOf(IrNew.class, expression("new " + name)).classReference(), value, form);
             assertNamedClass(assertInstanceOf(IrInstanceOf.class, expression("$x instanceof " + name))
-                    .classReference(), name, form);
+                    .classReference(), value, form);
             assertNamedClass(assertInstanceOf(IrStaticCall.class, expression(name + "::make()"))
-                    .classReference(), name, form);
+                    .classReference(), value, form);
             assertNamedClass(assertInstanceOf(IrClassName.class, expression(name + "::class"))
-                    .classReference(), name, form);
+                    .classReference(), value, form);
         });
     }
 
@@ -276,7 +281,7 @@ class ObjectConversionTest {
         assertEquals("items", fixedName(property.property()));
         IrCall factory = assertInstanceOf(IrCall.class,
                 assertInstanceOf(IrExpressionWriteBase.class, property.receiver()).expression());
-        assertEquals("factory", assertInstanceOf(IrNamedCallTarget.class, factory.target()).name().spelling());
+        assertEquals("factory", assertInstanceOf(IrNamedCallTarget.class, factory.target()).name().value());
         assertEquals(1, factory.arguments().size());
         assertCall(factory.arguments().getFirst().expression(), "first");
         assertCall(assignment.value(), "rhs");
@@ -359,9 +364,9 @@ class ObjectConversionTest {
         assertFalse(error.reason().isBlank(), code);
     }
 
-    private static void assertNamedClass(IrClassReference reference, String spelling, NameForm form) {
+    private static void assertNamedClass(IrClassReference reference, String value, NameForm form) {
         IrNamedClassReference named = assertInstanceOf(IrNamedClassReference.class, reference);
-        assertEquals(spelling, named.name().spelling());
+        assertEquals(value, named.name().value());
         assertEquals(form, named.name().form());
     }
 
@@ -371,7 +376,7 @@ class ObjectConversionTest {
 
     private static void assertCall(IrExpression expression, String name) {
         IrCall call = assertInstanceOf(IrCall.class, expression);
-        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().spelling());
+        assertEquals(name, assertInstanceOf(IrNamedCallTarget.class, call.target()).name().value());
         assertTrue(call.arguments().isEmpty());
     }
 
